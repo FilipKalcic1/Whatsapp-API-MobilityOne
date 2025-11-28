@@ -1,4 +1,3 @@
-# worker.py
 import asyncio
 import uuid
 import signal
@@ -134,19 +133,30 @@ class WhatsappWorker:
 
         logger.info("Worker ready. Processing loop started.")
         
+        # [NOVO] Brojač taktova za periodičke zadatke (recovery)
+        tick = 0
+        
         # 6. Glavna Petlja
         while self.running:
             await self.redis.setex("worker:heartbeat", 30, "alive")
             await self.redis.setex(f"worker:heartbeat:{self.hostname}:{self.worker_id}", 30, "alive")
 
             try:
-                await asyncio.gather(
+                # [NOVO] Skupljamo taskove u listu kako bismo mogli dodati recovery
+                tasks = [
                     self._process_inbound_batch(),
                     self._process_outbound(),
-                    self._process_retries(),
-                    return_exceptions=True
-                )
+                    self._process_retries()
+                ]
+                
+                # [NOVO] Recovery ne mora raditi svaku milisekundu. Svakih ~100 ciklusa (cca 1-2 sec) je dovoljno.
+                if tick % 100 == 0:
+                    tasks.append(self._recover_stalled_messages())
+
+                await asyncio.gather(*tasks, return_exceptions=True)
+                
                 await asyncio.sleep(0.01)
+                tick += 1
                 
             except Exception as e:
                 logger.error("Critical Main Loop Error", error=str(e))
@@ -179,6 +189,44 @@ class WhatsappWorker:
 
         except Exception as e:
             logger.error("Stream read error", error=str(e))
+
+    async def _recover_stalled_messages(self):
+        """
+        [ENTERPRISE FEATURE]
+        Periodički 'čistač' koji provjerava poruke koje su zapele kod workera 
+        koji su se srušili ili zapeli (nisu poslali ACK).
+        Preuzima vlasništvo nad njima i ponovno ih procesira.
+        """
+        if not self.running: return
+
+        try:
+            # XAUTOCLAIM: Atomski preuzima pending poruke starije od min_idle_time
+            # Args: stream, group, consumer, min_idle_time(ms), start_id, count
+            # Tražimo poruke koje nitko nije taknuo 60 sekundi (60000 ms)
+            claimed = await self.redis.xautoclaim(
+                name=STREAM_INBOUND,
+                groupname="workers_group",
+                consumername=self.worker_id,
+                min_idle_time=60000, 
+                start_id="0-0",
+                count=10
+            )
+            
+            # claimed vraća: (next_start_id, [messages], [deleted_ids])
+            messages = claimed[1]
+            
+            if messages:
+                logger.warning("Recovering stalled messages", count=len(messages))
+                tasks = []
+                for msg_id, payload in messages:
+                    # Ponovno procesiranje (idempotentnost je bitna!)
+                    tasks.append(self._process_single_message_transaction(msg_id, payload))
+                
+                if tasks:
+                    await asyncio.gather(*tasks)
+                    
+        except Exception as e:
+            logger.error("Recovery loop failed", error=str(e))
 
     async def _process_single_message_transaction(self, msg_id: str, payload: dict):
         try:
@@ -297,10 +345,18 @@ class WhatsappWorker:
                 break
 
     async def _check_rate_limit(self, sender: str) -> bool:
+        """
+        [MODIFIED] Provjera rate limita koristeći atomski Redis Pipeline.
+        Ovo sprječava race condition gdje se ključ inkrementira ali ne dobije TTL.
+        """
         key = f"rate:{sender}"
-        count = await self.redis.incr(key)
-        if count == 1: 
-            await self.redis.expire(key, 60)
+        
+        async with self.redis.pipeline() as pipe:
+            await pipe.incr(key)
+            await pipe.expire(key, 60)
+            results = await pipe.execute()
+            
+        count = results[0]
         return count <= 20
 
     async def _process_outbound(self):

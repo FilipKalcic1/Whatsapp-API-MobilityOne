@@ -19,3 +19,6 @@ asyncpg==0.29.0
 greenlet==3.0.3
 sentry-sdk[fastapi]==1.40.6   
 sqlalchemy>=2.0.29           
+tenacity>=8.2.3
+aiobreaker>=1.0.0
+
