@@ -2,11 +2,6 @@
 ## Brzi Start 
 
 ### 1. Konfiguracija  
-Kopiraj primjer konfiguracije i popuni potrebne podatke:
-
-```bash
-cp .env.example .env
-````
 
 U `.env` obavezno postavi:
 
