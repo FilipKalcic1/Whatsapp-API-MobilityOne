@@ -1,31 +1,71 @@
-# Python
+# --- Python Artifacts ---
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
+*.dll
+*.dylib
 
-# Virtual Environment
+# --- Virtual Environments ---
+# Različiti nazivi za venv foldere
+env/
 venv/
 .venv/
-env/
+.env_*/
 
-# Environment Variables (KRITIČNO BITNO)
+# --- Environment Variables & Secrets (KRITIČNO) ---
+# Nikada ne šalji ovo na GitHub!
 .env
+.env.prod
+.env.dev
+.env.local
 
-# Logs
+# --- Testing & Coverage ---
+# Rezultati testova i coverage reportovi ne trebaju biti u repou
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.cover
+
+# --- Type Checking ---
+.mypy_cache/
+
+# --- Logs ---
 *.log
 logs/
+*.log.*
 
-# Docker
-.docker/
-
-# OS specific
-.DS_Store
-Thumbs.db
-
-# IDEs
+# --- IDE & Editor Settings (Neprofesionalno je ovo dijeliti) ---
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
 
-# API Definitions (NOVO - ne šalji na GitHub)
+# --- OS Generated Files ---
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# --- Docker ---
+# Ako docker generira lokalne stvari, ignoriraj ih.
+# Dockerfile i docker-compose.yml SE MORAJU uploadati.
+.docker/
+
+# --- Project Specific Ignored Files ---
+# Velike datoteke ili generirani podaci koji se mogu ponovno izračunati
+tool_embeddings_cache.json
 swagger.json
+
+# --- Distribution / Packaging ---
+# Ako ćeš ikada pakirati projekt
+dist/
+build/
+*.egg-info/

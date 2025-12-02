@@ -1,0 +1,1932 @@
+{
+  "openapi": "3.0.4",
+  "info": {
+    "title": "Automation API",
+    "version": "v1.0.0"
+  },
+  "servers": [
+    {
+      "url": "/automation"
+    }
+  ],
+  "paths": {
+    "/AddCase": {
+      "post": {
+        "tags": [
+          "AddCase"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json-patch+json": {
+              "schema": {
+                "$ref": "#/components/schemas/MobilityOne.AutomationApi.Features.Cases.AddCaseDto"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MobilityOne.AutomationApi.Features.Cases.AddCaseDto"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MobilityOne.AutomationApi.Features.Cases.AddCaseDto"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/MobilityOne.AutomationApi.Features.Cases.AddCaseDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityOne.VehicleMgt.Contract.DTOs.Case"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityOne.VehicleMgt.Contract.DTOs.Case"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityOne.VehicleMgt.Contract.DTOs.Case"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/AddCase/parse": {
+      "post": {
+        "tags": [
+          "AddCase"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json-patch+json": {
+              "schema": {
+                "$ref": "#/components/schemas/MobilityOne.AutomationApi.Features.Cases.AddCaseDto"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MobilityOne.AutomationApi.Features.Cases.AddCaseDto"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MobilityOne.AutomationApi.Features.Cases.AddCaseDto"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/MobilityOne.AutomationApi.Features.Cases.AddCaseDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityOne.AutomationApi.Features.Cases.ParsedCaseInfo"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityOne.AutomationApi.Features.Cases.ParsedCaseInfo"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityOne.AutomationApi.Features.Cases.ParsedCaseInfo"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/AddMileage": {
+      "post": {
+        "tags": [
+          "AddMileage"
+        ],
+        "summary": "Add mileage entry by pushing it to the message bus",
+        "requestBody": {
+          "description": "",
+          "content": {
+            "application/json-patch+json": {
+              "schema": {
+                "$ref": "#/components/schemas/MobilityOne.AutomationApi.Features.SubmitMileage.AddMileageDto"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MobilityOne.AutomationApi.Features.SubmitMileage.AddMileageDto"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MobilityOne.AutomationApi.Features.SubmitMileage.AddMileageDto"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/MobilityOne.AutomationApi.Features.SubmitMileage.AddMileageDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityOne.AutomationApi.Features.SubmitMileage.Queries.FindVehicle.VehicleInfo"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityOne.AutomationApi.Features.SubmitMileage.Queries.FindVehicle.VehicleInfo"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityOne.AutomationApi.Features.SubmitMileage.Queries.FindVehicle.VehicleInfo"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/MasterData": {
+      "get": {
+        "tags": [
+          "MasterData"
+        ],
+        "parameters": [
+          {
+            "name": "personId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MobilityOne.VehicleMgt.Contract.DTOs.Master"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MobilityOne.VehicleMgt.Contract.DTOs.Master"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MobilityOne.VehicleMgt.Contract.DTOs.Master"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/PersonData/{personIdOrEmail}": {
+      "get": {
+        "tags": [
+          "PersonData"
+        ],
+        "parameters": [
+          {
+            "name": "personIdOrEmail",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "when",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityOne.AutomationApi.Features.AccessPersonData.PersonDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityOne.AutomationApi.Features.AccessPersonData.PersonDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityOne.AutomationApi.Features.AccessPersonData.PersonDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/SendEmail": {
+      "post": {
+        "tags": [
+          "SendEmail"
+        ],
+        "parameters": [
+          {
+            "name": "x-tenant",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json-patch+json": {
+              "schema": {
+                "$ref": "#/components/schemas/MobilityOne.AutomationApi.Features.SendEmail.EmailData"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MobilityOne.AutomationApi.Features.SendEmail.EmailData"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MobilityOne.AutomationApi.Features.SendEmail.EmailData"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/MobilityOne.AutomationApi.Features.SendEmail.EmailData"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/SyncExternalIdAndLicencePlate": {
+      "post": {
+        "tags": [
+          "SyncExternalIdAndLicencePlate"
+        ],
+        "summary": "Modify vehicle assignment - create, update or delete",
+        "requestBody": {
+          "description": "",
+          "content": {
+            "application/json-patch+json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/MobilityOne.AutomationApi.Features.SyncExternalIdAndLicencePlate.LicencePlateAndExternalInfo"
+                }
+              }
+            },
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/MobilityOne.AutomationApi.Features.SyncExternalIdAndLicencePlate.LicencePlateAndExternalInfo"
+                }
+              }
+            },
+            "text/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/MobilityOne.AutomationApi.Features.SyncExternalIdAndLicencePlate.LicencePlateAndExternalInfo"
+                }
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/MobilityOne.AutomationApi.Features.SyncExternalIdAndLicencePlate.LicencePlateAndExternalInfo"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/SyncExternalIdAndVIN": {
+      "post": {
+        "tags": [
+          "SyncExternalIdAndVIN"
+        ],
+        "summary": "Modify vehicle assignment - create, update or delete",
+        "requestBody": {
+          "description": "",
+          "content": {
+            "application/json-patch+json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/MobilityOne.AutomationApi.Features.SyncExternalIdAndVIN.VinAndExternalInfo"
+                }
+              }
+            },
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/MobilityOne.AutomationApi.Features.SyncExternalIdAndVIN.VinAndExternalInfo"
+                }
+              }
+            },
+            "text/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/MobilityOne.AutomationApi.Features.SyncExternalIdAndVIN.VinAndExternalInfo"
+                }
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/MobilityOne.AutomationApi.Features.SyncExternalIdAndVIN.VinAndExternalInfo"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/VehicleAssignments": {
+      "post": {
+        "tags": [
+          "VehicleAssignments"
+        ],
+        "summary": "Modify vehicle assignment - create, update or delete",
+        "requestBody": {
+          "description": "",
+          "content": {
+            "application/json-patch+json": {
+              "schema": {
+                "$ref": "#/components/schemas/MobilityOne.AutomationApi.Features.VehicleAssignments.VehicleAssignmentDto"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MobilityOne.AutomationApi.Features.VehicleAssignments.VehicleAssignmentDto"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MobilityOne.AutomationApi.Features.VehicleAssignments.VehicleAssignmentDto"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/MobilityOne.AutomationApi.Features.VehicleAssignments.VehicleAssignmentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityOne.VehicleMgt.Contract.DTOs.CalendarEntry"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityOne.VehicleMgt.Contract.DTOs.CalendarEntry"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobilityOne.VehicleMgt.Contract.DTOs.CalendarEntry"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Microsoft.AspNetCore.Mvc.ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Microsoft.AspNetCore.Mvc.ProblemDetails": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "nullable": true
+          },
+          "title": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "detail": {
+            "type": "string",
+            "nullable": true
+          },
+          "instance": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": { }
+      },
+      "MobilityOne.AutomationApi.Features.AccessPersonData.PersonDto": {
+        "required": [
+          "Code",
+          "CompanyName",
+          "DisplayName",
+          "Email",
+          "FirstName",
+          "LastName",
+          "OrgUnitCode",
+          "OrgUnitName"
+        ],
+        "type": "object",
+        "properties": {
+          "Id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "FirstName": {
+            "type": "string",
+            "nullable": true
+          },
+          "LastName": {
+            "type": "string",
+            "nullable": true
+          },
+          "Code": {
+            "type": "string",
+            "nullable": true
+          },
+          "Email": {
+            "type": "string",
+            "nullable": true
+          },
+          "DisplayName": {
+            "type": "string",
+            "description": "calculated as Code - LastName, FirstName",
+            "nullable": true
+          },
+          "Phone": {
+            "type": "string",
+            "nullable": true
+          },
+          "OrgUnitId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "TenantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "OrgUnitName": {
+            "type": "string",
+            "nullable": true
+          },
+          "OrgUnitCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "CompanyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "CompanyName": {
+            "type": "string",
+            "nullable": true
+          },
+          "CompanyCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "Metadata": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MobilityOne.Common.MetadataValue"
+            },
+            "nullable": true
+          },
+          "IsCustomDataValid": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "Custom": {
+            "nullable": true,
+            "readOnly": true
+          },
+          "PersonTypeId": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "PersonTypeName": {
+            "type": "string",
+            "nullable": true
+          },
+          "PersonTypeCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "PersonTypeDescription": {
+            "type": "string",
+            "nullable": true
+          },
+          "PersonTypeAmountFrom": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "PersonTypeAmountTo": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "OrgUnitFrom": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "OrgUnitTo": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "MobilityOne.AutomationApi.Features.Cases.AddCaseDto": {
+        "required": [
+          "Message",
+          "Subject",
+          "User"
+        ],
+        "type": "object",
+        "properties": {
+          "User": {
+            "type": "string",
+            "nullable": true
+          },
+          "Subject": {
+            "type": "string",
+            "nullable": true
+          },
+          "Message": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "MobilityOne.AutomationApi.Features.Cases.ParsedCaseInfo": {
+        "type": "object",
+        "properties": {
+          "CaseType": {
+            "$ref": "#/components/schemas/MobilityOne.AutomationApi.Features.Cases.Queries.FindCaseType.CaseTypeInfo"
+          },
+          "Person": {
+            "$ref": "#/components/schemas/MobilityOne.AutomationApi.Features.Cases.Queries.FindPerson.PersonInfo"
+          },
+          "Vehicle": {
+            "$ref": "#/components/schemas/MobilityOne.AutomationApi.Features.Cases.Queries.FindVehicle.VehicleInfo"
+          },
+          "Mileage": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "CaseSeverity": {
+            "$ref": "#/components/schemas/MobilityOne.AutomationApi.Features.Cases.Queries.FindCaseSeverity.CaseSeverityInfo"
+          },
+          "TimeZone": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "MobilityOne.AutomationApi.Features.Cases.Queries.FindCaseSeverity.CaseSeverityInfo": {
+        "type": "object",
+        "properties": {
+          "Id": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "Name": {
+            "type": "string",
+            "nullable": true
+          },
+          "UsedWord": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "MobilityOne.AutomationApi.Features.Cases.Queries.FindCaseType.CaseTypeInfo": {
+        "type": "object",
+        "properties": {
+          "Id": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "Name": {
+            "type": "string",
+            "nullable": true
+          },
+          "TenantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "UsedWord": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "MobilityOne.AutomationApi.Features.Cases.Queries.FindPerson.PersonInfo": {
+        "required": [
+          "Email",
+          "FirstName",
+          "LastName"
+        ],
+        "type": "object",
+        "properties": {
+          "Id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "Email": {
+            "type": "string",
+            "nullable": true
+          },
+          "FirstName": {
+            "type": "string",
+            "nullable": true
+          },
+          "LastName": {
+            "type": "string",
+            "nullable": true
+          },
+          "TenantId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "additionalProperties": false
+      },
+      "MobilityOne.AutomationApi.Features.Cases.Queries.FindVehicle.VehicleInfo": {
+        "type": "object",
+        "properties": {
+          "Id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "LicencePlate": {
+            "type": "string",
+            "nullable": true
+          },
+          "DisplayName": {
+            "type": "string",
+            "nullable": true
+          },
+          "TenantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "UsedWord": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "MobilityOne.AutomationApi.Features.SendEmail.EmailData": {
+        "required": [
+          "Message",
+          "Subject",
+          "To"
+        ],
+        "type": "object",
+        "properties": {
+          "To": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "Subject": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "Message": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "MobilityOne.AutomationApi.Features.SubmitMileage.AddMileageDto": {
+        "required": [
+          "Value",
+          "VehicleId"
+        ],
+        "type": "object",
+        "properties": {
+          "VehicleId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "Value": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer",
+            "format": "int32"
+          },
+          "Time": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "Comment": {
+            "maxLength": 500,
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "MobilityOne.AutomationApi.Features.SubmitMileage.Queries.FindVehicle.VehicleInfo": {
+        "type": "object",
+        "properties": {
+          "Id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "LicencePlate": {
+            "type": "string",
+            "nullable": true
+          },
+          "DisplayName": {
+            "type": "string",
+            "nullable": true
+          },
+          "TenantId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "additionalProperties": false
+      },
+      "MobilityOne.AutomationApi.Features.SyncExternalIdAndLicencePlate.LicencePlateAndExternalInfo": {
+        "required": [
+          "LicencePlate"
+        ],
+        "type": "object",
+        "properties": {
+          "LicencePlate": {
+            "type": "string",
+            "nullable": true
+          },
+          "ExternalId": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "MobilityOne.AutomationApi.Features.SyncExternalIdAndVIN.VinAndExternalInfo": {
+        "required": [
+          "VIN"
+        ],
+        "type": "object",
+        "properties": {
+          "VIN": {
+            "type": "string",
+            "nullable": true
+          },
+          "ExternalId": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "MobilityOne.AutomationApi.Features.VehicleAssignments.VehicleAssignmentDto": {
+        "required": [
+          "AssigneeCode",
+          "AssignmentId",
+          "FromTime",
+          "VIN"
+        ],
+        "type": "object",
+        "properties": {
+          "AssignmentId": {
+            "type": "string",
+            "nullable": true
+          },
+          "VIN": {
+            "type": "string",
+            "nullable": true
+          },
+          "FromTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "ToTime": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "AssigneeCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "Deleted": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "MobilityOne.Common.MetadataValue": {
+        "type": "object",
+        "properties": {
+          "Id": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "MetadataId": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "ColumnName": {
+            "type": "string",
+            "nullable": true
+          },
+          "Value": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "MobilityOne.VehicleMgt.Contract.DTOs.CalendarEntry": {
+        "required": [
+          "AssignedToId",
+          "AssigneeType",
+          "EntryType",
+          "FromTime",
+          "VehicleId"
+        ],
+        "type": "object",
+        "properties": {
+          "Id": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "VehicleName": {
+            "type": "string",
+            "nullable": true
+          },
+          "AssigneeName": {
+            "type": "string",
+            "nullable": true
+          },
+          "AssigneeCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "AssigneeTypeName": {
+            "type": "string",
+            "nullable": true
+          },
+          "TenantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "VehicleId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "LicencePlate": {
+            "type": "string",
+            "nullable": true
+          },
+          "VIN": {
+            "type": "string",
+            "nullable": true
+          },
+          "VehicleTypeId": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "VehicleTypeName": {
+            "type": "string",
+            "nullable": true
+          },
+          "VehicleStatusId": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "VehicleStatus": {
+            "type": "string",
+            "nullable": true
+          },
+          "VehicleExternalId": {
+            "type": "string",
+            "nullable": true
+          },
+          "PoolId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "PoolName": {
+            "type": "string",
+            "nullable": true
+          },
+          "FromTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "ToTime": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "Description": {
+            "type": "string",
+            "nullable": true
+          },
+          "ExternalId": {
+            "type": "string",
+            "nullable": true
+          },
+          "AssignedToId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "AssigneeType": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "Mileage": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "CaseId": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "EntryType": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "EntryTypeName": {
+            "type": "string",
+            "nullable": true
+          },
+          "OperatedBy": {
+            "type": "string",
+            "nullable": true
+          },
+          "LastMileage": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "LastMileageTime": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "Price": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "MobilityOne.VehicleMgt.Contract.DTOs.Case": {
+        "required": [
+          "CaseStatusId",
+          "CaseTypeId",
+          "TimeZone",
+          "UtcRaisedOn",
+          "VehicleId"
+        ],
+        "type": "object",
+        "properties": {
+          "Id": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "TenantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "VehicleId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "VehicleName": {
+            "type": "string",
+            "nullable": true
+          },
+          "LicencePlate": {
+            "type": "string",
+            "nullable": true
+          },
+          "VIN": {
+            "type": "string",
+            "nullable": true
+          },
+          "VehicleAssetId": {
+            "type": "string",
+            "nullable": true
+          },
+          "VehiclePoolName": {
+            "type": "string",
+            "nullable": true
+          },
+          "VehiclePoolId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "VehicleTypeId": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "VehicleTypeName": {
+            "type": "string",
+            "nullable": true
+          },
+          "CaseTypeId": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "CaseTypeName": {
+            "type": "string",
+            "nullable": true
+          },
+          "StartTime": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "TimeZone": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "UtcStartTime": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "StartYear": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "readOnly": true
+          },
+          "UtcStartYear": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "readOnly": true
+          },
+          "StartMonth": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "readOnly": true
+          },
+          "UtcStartMonth": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "readOnly": true
+          },
+          "EndYear": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "readOnly": true
+          },
+          "UtcEndYear": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "readOnly": true
+          },
+          "EndMonth": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "readOnly": true
+          },
+          "UtcEndMonth": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "readOnly": true
+          },
+          "EndTime": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "UtcEndTime": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "DueDate": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "UtcDueDate": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "CaseStatusId": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "CaseStatus": {
+            "type": "string",
+            "nullable": true
+          },
+          "SeverityId": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "Severity": {
+            "type": "string",
+            "nullable": true
+          },
+          "Description": {
+            "type": "string",
+            "nullable": true
+          },
+          "AssigneeId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "AssigneeType": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "AssigneeName": {
+            "type": "string",
+            "nullable": true
+          },
+          "AssigneeTypeName": {
+            "type": "string",
+            "nullable": true
+          },
+          "RaisedByAssigneeId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "RaisedByAssigneeType": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "RaisedByAssigneeName": {
+            "type": "string",
+            "nullable": true
+          },
+          "RaisedByAssigneeTypeName": {
+            "type": "string",
+            "nullable": true
+          },
+          "Mileage": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "CreatedBy": {
+            "type": "string",
+            "nullable": true
+          },
+          "Comment": {
+            "type": "string",
+            "nullable": true
+          },
+          "Location": {
+            "type": "string",
+            "nullable": true
+          },
+          "ExternalId": {
+            "maxLength": 200,
+            "type": "string",
+            "nullable": true
+          },
+          "UtcRaisedOn": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "RaisedOn": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "RaisedOnYear": {
+            "type": "integer",
+            "format": "int32",
+            "readOnly": true
+          },
+          "RaisedOnMonth": {
+            "type": "integer",
+            "format": "int32",
+            "readOnly": true
+          },
+          "UtcRaisedOnYear": {
+            "type": "integer",
+            "format": "int32",
+            "readOnly": true
+          },
+          "UtcRaisedOnMonth": {
+            "type": "integer",
+            "format": "int32",
+            "readOnly": true
+          },
+          "DueYear": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "readOnly": true
+          },
+          "UtcDueYear": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "readOnly": true
+          },
+          "DueMonth": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "readOnly": true
+          },
+          "UtcDueMonth": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "readOnly": true
+          },
+          "Amount": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "FileId": {
+            "type": "string",
+            "nullable": true
+          },
+          "LastChange": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "MobilityOne.VehicleMgt.Contract.DTOs.Master": {
+        "type": "object",
+        "properties": {
+          "Id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "TenantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "PoolId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "PoolName": {
+            "type": "string",
+            "nullable": true
+          },
+          "VehicleTypeId": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "VehicleTypeName": {
+            "type": "string",
+            "nullable": true
+          },
+          "MileageUnit": {
+            "type": "string",
+            "nullable": true
+          },
+          "GeneralStatusId": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "GeneralStatusName": {
+            "type": "string",
+            "nullable": true
+          },
+          "AvailabilityId": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "Availability": {
+            "type": "string",
+            "nullable": true
+          },
+          "LicencePlate": {
+            "type": "string",
+            "nullable": true
+          },
+          "OldLicencePlates": {
+            "type": "string",
+            "nullable": true
+          },
+          "FullVehicleName": {
+            "type": "string",
+            "nullable": true,
+            "readOnly": true
+          },
+          "VIN": {
+            "type": "string",
+            "nullable": true
+          },
+          "Manufacturer": {
+            "type": "string",
+            "nullable": true
+          },
+          "Model": {
+            "type": "string",
+            "nullable": true
+          },
+          "Make": {
+            "type": "string",
+            "nullable": true
+          },
+          "DisplayName": {
+            "type": "string",
+            "nullable": true
+          },
+          "LastMileage": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "LastMileageTime": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "MaintenanceMileagePeriod": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "MaintenanceDaysPeriod": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "MaintenanceComment": {
+            "maxLength": 500,
+            "type": "string",
+            "nullable": true
+          },
+          "LastUnresolvedCase": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "UnresolvedCasesCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "Comment": {
+            "type": "string",
+            "nullable": true
+          },
+          "ProductionYear": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "Co2": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "AssetId": {
+            "type": "string",
+            "nullable": true
+          },
+          "IsCustomDataValid": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "Custom": {
+            "nullable": true,
+            "readOnly": true
+          },
+          "IsPeriodicActivityDataValid": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "PeriodicActivities": {
+            "nullable": true,
+            "readOnly": true
+          },
+          "IsEquipmentDataValid": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "Equipment": {
+            "nullable": true,
+            "readOnly": true
+          },
+          "IsContractDataValid": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "Contract": {
+            "nullable": true,
+            "readOnly": true
+          },
+          "Location": {
+            "type": "string",
+            "nullable": true
+          },
+          "ExternalId": {
+            "type": "string",
+            "nullable": true
+          },
+          "LastChange": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "AcquiringTypeId": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "AcquiringTypeName": {
+            "type": "string",
+            "nullable": true
+          },
+          "ProviderId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "ProviderName": {
+            "type": "string",
+            "nullable": true
+          },
+          "SupplierId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "SupplierName": {
+            "type": "string",
+            "nullable": true
+          },
+          "ContractId": {
+            "type": "string",
+            "nullable": true
+          },
+          "ContractDate": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "AcquiringCompany": {
+            "type": "string",
+            "nullable": true
+          },
+          "ContractStart": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "ContractEnd": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "Duration": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "StartingMileage": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "YearlyMileage": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "MileageLimit": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "EstimatedMileageOnEnd": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "MileageExceeded": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "InitialAmount": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "MonthlyAmount": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "RemainingAmount": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "AcquiryComment": {
+            "type": "string",
+            "nullable": true
+          },
+          "Driver": {
+            "type": "string",
+            "nullable": true
+          },
+          "DriverId": {
+            "type": "string",
+            "nullable": true
+          },
+          "OrgUnit": {
+            "type": "string",
+            "nullable": true
+          },
+          "OrgUnitCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "OrgUnitId": {
+            "type": "string",
+            "nullable": true
+          },
+          "Company": {
+            "type": "string",
+            "nullable": true
+          },
+          "CompanyId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "CostCenter": {
+            "type": "string",
+            "nullable": true
+          },
+          "CostCenterCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "CostCenterId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "NotificationTo": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "securitySchemes": {
+      "Bearer": {
+        "type": "http",
+        "description": "Paste only token",
+        "scheme": "bearer"
+      }
+    }
+  },
+  "security": [
+    {
+      "Bearer": [ ]
+    }
+  ]
+}

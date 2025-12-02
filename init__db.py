@@ -15,3 +15,7 @@ async def init_models():
 
 if __name__ == "__main__":
     asyncio.run(init_models())
+
+
+
+    # trebamo staviti alembic da bude dobro za mijenjanje ubuduće 

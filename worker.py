@@ -352,8 +352,8 @@ class WhatsappWorker:
         key = f"rate:{sender}"
         
         async with self.redis.pipeline() as pipe:
-            await pipe.incr(key)
-            await pipe.expire(key, 60)
+            pipe.incr(key)
+            pipe.expire(key, 60)
             results = await pipe.execute()
             
         count = results[0]

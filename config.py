@@ -7,12 +7,9 @@ class Settings(BaseSettings):
     
     # --- INFRASTRUCTURE ---
     REDIS_URL: str
-
     DATABASE_URL: str
-    
     SENTRY_DSN: Optional[str] = None
 
-    # Database Tuning 
     DB_POOL_SIZE: int = 20
     DB_MAX_OVERFLOW: int = 10
     DB_POOL_RECYCLE: int = 3600
@@ -27,18 +24,19 @@ class Settings(BaseSettings):
     INFOBIP_SENDER_NUMBER: str
     INFOBIP_SECRET_KEY: str
 
-    # --- MOBILITY ONE API (Service Account) ---
+    # --- MOBILITY ONE API ---
     MOBILITY_API_URL: str 
-    # Opcionalno statični token
     MOBILITY_API_TOKEN: Optional[str] = None
     
-    # Auth (OAuth2 Client Credentials)
+    # Auth
     MOBILITY_AUTH_URL: Optional[str] = None
     MOBILITY_CLIENT_ID: Optional[str] = None
     MOBILITY_CLIENT_SECRET: Optional[str] = None
     MOBILITY_SCOPE: str = "add-case"
     
-    # Tools
+    # [NOVO] Ovo je falilo
+    MOBILITY_USER_CHECK_ENDPOINT: str = "/PersonData/{personIdOrEmail}"
+    
     SWAGGER_URL: Optional[str] = None
     
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")

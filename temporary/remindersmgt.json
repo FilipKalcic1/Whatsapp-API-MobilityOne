@@ -1,0 +1,924 @@
+{
+  "openapi": "3.0.4",
+  "info": {
+    "title": "Reminders Management API",
+    "version": "v2.0.0-alpha"
+  },
+  "servers": [
+    {
+      "url": "/remindersmgt"
+    }
+  ],
+  "paths": {
+    "/ActivityReminderSettings": {
+      "get": {
+        "tags": [
+          "ActivityReminderSettings"
+        ],
+        "parameters": [
+          {
+            "name": "x-tenant",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityReminderSettingsModel"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityReminderSettingsModel"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityReminderSettingsModel"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "ActivityReminderSettings"
+        ],
+        "parameters": [
+          {
+            "name": "x-tenant",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActivityReminderSettingsModel"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActivityReminderSettingsModel"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActivityReminderSettingsModel"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        }
+      }
+    },
+    "/AvailabilityCalculationSettings": {
+      "get": {
+        "tags": [
+          "AvailabilityCalculationSettings"
+        ],
+        "parameters": [
+          {
+            "name": "x-tenant",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleSettingsModel"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleSettingsModel"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleSettingsModel"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "AvailabilityCalculationSettings"
+        ],
+        "parameters": [
+          {
+            "name": "x-tenant",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScheduleSettingsModel"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScheduleSettingsModel"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScheduleSettingsModel"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        }
+      }
+    },
+    "/MileageReminderSettings": {
+      "get": {
+        "tags": [
+          "MileageReminderSettings"
+        ],
+        "parameters": [
+          {
+            "name": "x-tenant",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/MileageReminderSettingsModel"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MileageReminderSettingsModel"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MileageReminderSettingsModel"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "MileageReminderSettings"
+        ],
+        "parameters": [
+          {
+            "name": "x-tenant",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MileageReminderSettingsModel"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MileageReminderSettingsModel"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/MileageReminderSettingsModel"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        }
+      }
+    },
+    "/ReportActivity/{reminderId}": {
+      "get": {
+        "tags": [
+          "ReportActivity"
+        ],
+        "summary": "Get data about the reminder (periodic activity info, and if the remainder had been already used)\nIf MobilityOne.RemindersMgt.WebApi.Features.ReportActivity.Queries.ActivityReminderData.ReportedOnUTC is not null then this reminder is \"expired\",\ni.e. the activity is alredy renewed using this reminder",
+        "parameters": [
+          {
+            "name": "reminderId",
+            "in": "path",
+            "description": "",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityReminderData"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityReminderData"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityReminderData"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ReportActivity": {
+      "post": {
+        "tags": [
+          "ReportActivity"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportActivityModel"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportActivityModel"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportActivityModel"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ReportMileage/{reminderId}": {
+      "get": {
+        "tags": [
+          "ReportMileage"
+        ],
+        "summary": "Get data about the reminder (vehicle info, and if the remainder had been already used)\nIf MobilityOne.RemindersMgt.WebApi.Features.ReportMileage.Queries.MileageReminderData.ReportedOnUTC is not null then this reminder is \"expired\",\ni.e. the mileage is alredy reported using this reminder",
+        "parameters": [
+          {
+            "name": "reminderId",
+            "in": "path",
+            "description": "",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/MileageReminderData"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MileageReminderData"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MileageReminderData"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ReportMileage": {
+      "post": {
+        "tags": [
+          "ReportMileage"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportMileageModel"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportMileageModel"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportMileageModel"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/SendActivityReminders": {
+      "get": {
+        "tags": [
+          "SendActivityReminders"
+        ],
+        "summary": "Schedule activity reminders for all tenants matching day and hour settings of the tenant.",
+        "responses": {
+          "202": {
+            "description": "Accepted"
+          }
+        }
+      }
+    },
+    "/SendMileageReminders": {
+      "get": {
+        "tags": [
+          "SendMileageReminders"
+        ],
+        "summary": "Schedule mileage reminders for all tenants matching day and hour settings of the tenant.",
+        "responses": {
+          "202": {
+            "description": "Accepted"
+          }
+        }
+      }
+    },
+    "/UpdateVehiclesAvailability": {
+      "get": {
+        "tags": [
+          "UpdateVehiclesAvailability"
+        ],
+        "summary": "Schedule vehicle availability update for all tenants matching day and hour settings of the tenant.",
+        "responses": {
+          "202": {
+            "description": "Accepted"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ActivityReminderData": {
+        "type": "object",
+        "properties": {
+          "VehicleName": {
+            "type": "string",
+            "nullable": true
+          },
+          "LicencePlate": {
+            "type": "string",
+            "nullable": true
+          },
+          "MaintenanceIntervalUnits": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "MaintenanceIntervalDays": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "PeriodicActivityCategoryId": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "PeriodicActivityCategoryName": {
+            "type": "string",
+            "nullable": true
+          },
+          "PeriodicActivityTypeName": {
+            "type": "string",
+            "nullable": true
+          },
+          "PeriodicActivityTypeDescription": {
+            "type": "string",
+            "nullable": true
+          },
+          "ActivityIntervalDays": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "ActivityIntervalUnits": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "ExpiryDate": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "ExpiryUnits": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "PartnerId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "PartnerName": {
+            "type": "string",
+            "nullable": true
+          },
+          "CertificateNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "Description": {
+            "type": "string",
+            "nullable": true
+          },
+          "LastMileage": {
+            "type": "integer",
+            "description": "Last noted mileage of the vehicle",
+            "format": "int32"
+          },
+          "ReportedOnUTC": {
+            "type": "string",
+            "description": "If not null, then it means that this remainder cannot be used any more to report mileage\nThe value is UTC time when the mileage had been reported using this remainder",
+            "format": "date-time",
+            "nullable": true
+          },
+          "Partners": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GuidIdName"
+            },
+            "nullable": true
+          },
+          "RegionalSettings": {
+            "nullable": true,
+            "readOnly": true
+          }
+        },
+        "additionalProperties": false,
+        "description": "Contains data of the vehicle for which the reminder had been sent"
+      },
+      "ActivityReminderSettingsModel": {
+        "type": "object",
+        "properties": {
+          "TenantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "Monday": {
+            "type": "boolean"
+          },
+          "Tuesday": {
+            "type": "boolean"
+          },
+          "Wednesday": {
+            "type": "boolean"
+          },
+          "Thursday": {
+            "type": "boolean"
+          },
+          "Friday": {
+            "type": "boolean"
+          },
+          "Saturday": {
+            "type": "boolean"
+          },
+          "Sunday": {
+            "type": "boolean"
+          },
+          "Hours": {
+            "type": "string",
+            "nullable": true
+          },
+          "ReplyTo": {
+            "type": "string",
+            "nullable": true
+          },
+          "TimeZoneId": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false,
+        "description": "Defines activity reminder settings in a tenant\nReminders are triggered every hour, and they will be sent \nif the hour matches choosen Hour, and if the value of the date is set to true"
+      },
+      "GuidIdName": {
+        "type": "object",
+        "properties": {
+          "Id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "Name": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "MileageReminderData": {
+        "type": "object",
+        "properties": {
+          "VehicleName": {
+            "type": "string",
+            "nullable": true
+          },
+          "LicencePlate": {
+            "type": "string",
+            "nullable": true
+          },
+          "LastMileage": {
+            "type": "integer",
+            "description": "Last noted mileage of the vehicle",
+            "format": "int32"
+          },
+          "ReportedOnUTC": {
+            "type": "string",
+            "description": "If not null, then it means that this remainder cannot be used any more to report mileage\nThe value is UTC time when the mileage had been reported using this remainder",
+            "format": "date-time",
+            "nullable": true
+          },
+          "RegionalSettings": {
+            "nullable": true,
+            "readOnly": true
+          }
+        },
+        "additionalProperties": false,
+        "description": "Contains data of the vehicle for which the reminder had been sent"
+      },
+      "MileageReminderSettingsModel": {
+        "required": [
+          "Hours",
+          "ReplyTo",
+          "TimeZoneId"
+        ],
+        "type": "object",
+        "properties": {
+          "TenantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "Monday": {
+            "type": "boolean"
+          },
+          "Tuesday": {
+            "type": "boolean"
+          },
+          "Wednesday": {
+            "type": "boolean"
+          },
+          "Thursday": {
+            "type": "boolean"
+          },
+          "Friday": {
+            "type": "boolean"
+          },
+          "Saturday": {
+            "type": "boolean"
+          },
+          "Sunday": {
+            "type": "boolean"
+          },
+          "Hours": {
+            "type": "string",
+            "nullable": true
+          },
+          "ReplyTo": {
+            "type": "string",
+            "nullable": true
+          },
+          "CutoffDayOfMonth": {
+            "type": "integer",
+            "description": "Determines the day of the month from which reports must exists in order not to send the reminder\nIf it is less than the current day, it will be considered as the day in the previous month\nWhen calculated, MobilityOne.RemindersMgt.WebApi.Features.ScheduleSettings.MileageReminders.MileageReminderSettingsModel.DaysBeforeCutoff will be substraced from this date to define the report date boundary",
+            "format": "int32",
+            "nullable": true
+          },
+          "DaysBeforeCutoff": {
+            "type": "integer",
+            "description": "Substracted from cutoff day of month to define the report date boundary",
+            "format": "int32",
+            "nullable": true
+          },
+          "CutoffDayOfWeek": {
+            "type": "string",
+            "description": "Same meaning as MobilityOne.RemindersMgt.WebApi.Features.ScheduleSettings.MileageReminders.MileageReminderSettingsModel.CutoffDayOfMonth, but it is calculated based on the day of the week\nValid values are Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday",
+            "nullable": true
+          },
+          "TimeZoneId": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false,
+        "description": "Defines mileage reminder settings in a tenant\nReminders are triggered every hour, and it will be sent \nif the hour matches choosen Hour, and if the value of the date is set to true"
+      },
+      "ProblemDetails": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "nullable": true
+          },
+          "title": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "detail": {
+            "type": "string",
+            "nullable": true
+          },
+          "instance": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": { }
+      },
+      "ReportActivityModel": {
+        "required": [
+          "Date",
+          "ReminderId"
+        ],
+        "type": "object",
+        "properties": {
+          "ReminderId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "Date": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "ExpiryDate": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "ExpiryUnits": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "PartnerId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "CertificateNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "Description": {
+            "type": "string",
+            "nullable": true
+          },
+          "Mileage": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "ContentLink": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "ReportMileageModel": {
+        "required": [
+          "Mileage",
+          "ReminderId"
+        ],
+        "type": "object",
+        "properties": {
+          "ReminderId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "Mileage": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer",
+            "format": "int32"
+          },
+          "Comment": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "ScheduleSettingsModel": {
+        "type": "object",
+        "properties": {
+          "TenantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "Monday": {
+            "type": "boolean"
+          },
+          "Tuesday": {
+            "type": "boolean"
+          },
+          "Wednesday": {
+            "type": "boolean"
+          },
+          "Thursday": {
+            "type": "boolean"
+          },
+          "Friday": {
+            "type": "boolean"
+          },
+          "Saturday": {
+            "type": "boolean"
+          },
+          "Sunday": {
+            "type": "boolean"
+          },
+          "Hours": {
+            "type": "string",
+            "nullable": true
+          },
+          "TimeZoneId": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false,
+        "description": "Defines vehicle available scheduler settings in a tenant\nReminders are triggered every hour, and it will be sent \nif the hour matches choosen Hour, and if the value of the date is set to true"
+      }
+    },
+    "securitySchemes": {
+      "Bearer": {
+        "type": "http",
+        "description": "Paste only token",
+        "scheme": "bearer"
+      }
+    }
+  },
+  "security": [
+    {
+      "Bearer": [ ]
+    }
+  ]
+}

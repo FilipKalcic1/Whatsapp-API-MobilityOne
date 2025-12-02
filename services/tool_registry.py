@@ -83,11 +83,11 @@ class ToolRegistry:
 
     async def find_relevant_tools(self, query: str, top_k: int = 3) -> List[Dict]:
         """Semantic Search alata koristeći Cosine Similarity."""
-        if not self.is_ready or not self.tools_vectors: return []
+        if not self.is_ready or len(self.tools_vectors) == 0: return []
 
         try:
             query_vec = await self._get_embedding(query)
-            if not query_vec: return []
+            if query_vec is None: return []
 
             scores = np.dot(self.tools_vectors, query_vec)
             

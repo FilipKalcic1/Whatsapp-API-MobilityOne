@@ -1,6 +1,5 @@
 import pytest
-import json
-import orjson  # Koristimo za provjeru formata ako želimo biti precizni, ili json.loads za logiku
+import orjson
 from unittest.mock import MagicMock, AsyncMock, patch
 from services.queue import QueueService, QUEUE_OUTBOUND, QUEUE_SCHEDULE
 
@@ -32,15 +31,13 @@ async def test_enqueue_adds_to_redis():
     # 1. Provjeri ime reda
     assert args[0] == QUEUE_OUTBOUND
     
-    # 2. Provjeri sadržaj poruke (robusnija metoda)
-    # Umjesto usporedbe stringova, parsiramo JSON koji je poslan u Redis
-    # i uspoređujemo ga s očekivanim rječnikom.
+    # 2. Provjeri sadržaj poruke
     actual_payload = orjson.loads(args[1])
     assert actual_payload == expected_data
 
 @pytest.mark.asyncio
 async def test_schedule_retry_logic():
-    """Testira retry logiku (ZSET)."""
+    """Testira retry logiku (dodavanje u ZSET)."""
     mock_redis = MagicMock()
     mock_redis.zadd = AsyncMock()
     

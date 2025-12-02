@@ -1,0 +1,11 @@
+[run]
+omit =
+    # Ignoriraj skripte za inicijalizaciju
+    init__db.py
+    
+    # Ignoriraj testove (ne testiramo testove)
+    tests/*
+    
+    # Opcionalno: Ignoriraj konfiguracijske datoteke ako želiš još čišći report
+    config.py
+    logger_config.py

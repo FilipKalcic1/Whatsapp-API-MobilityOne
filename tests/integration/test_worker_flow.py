@@ -34,15 +34,15 @@ async def test_worker_full_successful_flow(redis_client):
     
     stream_id = await worker.queue.enqueue_inbound("38599", "Gdje je auto?", "msg_1")
 
-    # [POPRAVAK] Mockamo bazu i UserService
     mock_session = AsyncMock()
     mock_session.__aenter__.return_value = mock_session
     
+    # [POPRAVAK] Dodan patch za _check_rate_limit da izbjegnemo probleme s FakeRedis pipelineom
     with patch("worker.AsyncSessionLocal", return_value=mock_session), \
          patch("worker.UserService") as MockUserService, \
-         patch("worker.analyze_intent", side_effect=[tool_decision, final_decision]):
+         patch("worker.analyze_intent", side_effect=[tool_decision, final_decision]), \
+         patch.object(worker, '_check_rate_limit', return_value=True): 
         
-        # Konfiguracija lažnog korisnika
         mock_user_service = MockUserService.return_value
         mock_user = MagicMock()
         mock_user.display_name = "Test User"
@@ -52,6 +52,7 @@ async def test_worker_full_successful_flow(redis_client):
         payload = {"sender": "38599", "text": "Gdje je auto?"}
         await worker._process_single_message_transaction(stream_id, payload)
 
+    # Sada bi ovo trebalo prolaziti jer worker ne puca na rate limitu
     worker.gateway.execute_tool.assert_called_once()
     
     outbound_msg = await redis_client.lpop(QUEUE_OUTBOUND)

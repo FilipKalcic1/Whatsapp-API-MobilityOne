@@ -80,16 +80,23 @@ class FakeRedis:
     async def xdel(self, stream, id): return 1
     async def xgroup_create(self, stream, group, id="$", mkstream=False): return True
 
+    # [NOVO] Dodano za podršku testiranja worker recovery logike
+    async def xautoclaim(self, name, groupname, consumername, min_idle_time=0, start_id="0-0", count=1):
+        # Vraća prazan rezultat jer u testovima obično mockamo povratnu vrijednost
+        # ili koristimo patch, ali metoda mora postojati da bi patch.object radio.
+        return "0-0", [], []
+
     async def expire(self, key, time): return True
     async def zadd(self, key, mapping): return 1
     async def zrangebyscore(self, key, min, max, start=None, num=None): return [] 
     async def zrem(self, key, member): return 1
     
-    # [POPRAVAK] Metode koje trebaju za Rate Limiter
+    # Metode koje trebaju za Rate Limiter
     async def eval(self, *args, **kwargs): return 0
     async def evalsha(self, *args, **kwargs): return 0
     async def script_load(self, script): return "dummy_sha"
 
+    # Pipeline podrška (vraća self, simulira ponašanje bez transakcija)
     def pipeline(self): return self
     async def __aenter__(self): return self
     async def __aexit__(self, exc_type, exc_val, exc_tb): pass
@@ -105,7 +112,7 @@ def redis_client():
 async def async_client(redis_client):
     queue_service = QueueService(redis_client)
     
-    # [POPRAVAK] Samo queue overrideamo jer ga API koristi
+    # Overrideamo queue dependency jer ga API koristi
     app.dependency_overrides[get_queue] = lambda: queue_service
     
     await FastAPILimiter.init(redis_client)

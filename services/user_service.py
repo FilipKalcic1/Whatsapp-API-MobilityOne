@@ -3,8 +3,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from models import UserMapping
 from services.openapi_bridge import OpenAPIGateway
+from config import get_settings
+
 
 logger = structlog.get_logger("user_service")
+settings = get_settings()
+
 
 class UserService:
     def __init__(self, db: AsyncSession, gateway: OpenAPIGateway):
@@ -27,7 +31,7 @@ class UserService:
 
     async def _validate_remote_profile(self, email: str) -> dict | None:
         tool_def = {
-            "path": "/PersonData/{personIdOrEmail}",
+            "path": settings.MOBILITY_USER_CHECK_ENDPOINT,
             "method": "GET",
             "description": "Check user existence",
             "openai_schema": {}, 
