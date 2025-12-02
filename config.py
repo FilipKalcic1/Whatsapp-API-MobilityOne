@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str
     SENTRY_DSN: Optional[str] = None
 
-    DB_POOL_SIZE: int = 20
+    DB_POOL_SIZE: int = 5
     DB_MAX_OVERFLOW: int = 10
     DB_POOL_RECYCLE: int = 3600
     

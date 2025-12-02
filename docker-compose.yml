@@ -12,13 +12,14 @@ services:
   # --- DATA LAYER ---
   redis:
     image: redis:7-alpine
+    
     container_name: fleet_redis
     restart: always
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
-    command: redis-server --appendonly yes --loglevel notice # <--- Smanjeno logiranje
     logging: *default-logging # <--- Primijeni limit
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -84,9 +85,12 @@ services:
 
   worker:
     build: .
+    stop_grace_period: 20s
     deploy:
       mode: replicated
       replicas: 3  
+
+
     command: python worker.py
     volumes:
       - .:/app

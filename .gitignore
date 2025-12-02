@@ -61,7 +61,6 @@ Desktop.ini
 
 # --- Project Specific Ignored Files ---
 # Velike datoteke ili generirani podaci koji se mogu ponovno izračunati
-tool_embeddings_cache.json
 swagger.json
 
 # --- Distribution / Packaging ---

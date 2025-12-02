@@ -20,6 +20,7 @@ from services.tool_registry import ToolRegistry
 from services.openapi_bridge import OpenAPIGateway
 from services.user_service import UserService
 from services.ai import analyze_intent
+from services.maintenance import MaintenanceService
 
 settings = get_settings()
 configure_logger()
@@ -30,12 +31,15 @@ MSG_PROCESSED = Counter('whatsapp_msg_total', 'Ukupan broj obrađenih poruka', [
 AI_LATENCY = Histogram('ai_processing_seconds', 'Vrijeme obrade AI zahtjeva', buckets=[1, 2, 5, 10, 20])
 
 # --- SIGURNOST LOGIRANJA ---
-SENSITIVE_KEYS = {'email', 'phone', 'password', 'token', 'authorization', 'secret', 'apikey', 'to'}
+SENSITIVE_KEYS = {
+    'email', 'phone', 'password', 'token', 'authorization', 'secret', 
+    'apikey', 'to', 'oib', 'jmbg', 'iban', 'card', 'credit_card', 'pin'
+}
 
 def sanitize_log_data(data: Any) -> Any:
-    """Rekurzivno maskira osjetljive podatke u rječnicima i listama."""
+    """Rekurzivno maskira osjetljive podatke."""
     if isinstance(data, dict):
-        return {k: ("***MASKED***" if k.lower() in SENSITIVE_KEYS else sanitize_log_data(v)) for k, v in data.items()}
+        return {k: ("***MASKED***" if any(s in k.lower() for s in SENSITIVE_KEYS) else sanitize_log_data(v)) for k, v in data.items()}
     if isinstance(data, list):
         return [sanitize_log_data(v) for v in data]
     return data
@@ -57,7 +61,7 @@ def summarize_data(data: Any) -> Any:
         
         clean_dict = {}
         for k, v in data.items():
-            if k.lower() in SENSITIVE_KEYS:
+            if any(s in k.lower() for s in SENSITIVE_KEYS):
                 clean_dict[k] = "***MASKED***"
             elif isinstance(v, (dict, list, str)) and len(str(v)) > 500:
                 clean_dict[k] = f"<Truncated type {type(v).__name__}, len={len(str(v))}>"
@@ -82,6 +86,7 @@ class WhatsappWorker:
         self.queue = None
         self.context = None
         self.registry = None
+        self.maintenance = None
 
     async def start(self):
         """Inicijalizacija infrastrukture i pokretanje glavne petlje."""
@@ -94,26 +99,22 @@ class WhatsappWorker:
                 traces_sample_rate=0.1, 
             )
 
-        # 1. Start Prometheus Metrics Server
         try:
             start_http_server(8001)
             logger.info("Prometheus metrics server running on port 8001")
         except Exception as e:
             logger.warning("Failed to start metrics server", error=str(e))
         
-        # 2. Povezivanje na infrastrukturu
         self.redis = redis.from_url(settings.REDIS_URL, decode_responses=True)
         self.http = httpx.AsyncClient(timeout=15.0)
         self.queue = QueueService(self.redis)
         self.context = ContextService(self.redis)
         
-        # 3. API Gateway
         if settings.MOBILITY_API_URL:
             self.gateway = OpenAPIGateway(base_url=settings.MOBILITY_API_URL)
         else:
             logger.warning("MOBILITY_API_URL not set. AI tools will fail.")
 
-        # 4. Tool Registry
         self.registry = ToolRegistry(self.redis)
         swagger_src = settings.SWAGGER_URL or "swagger.json"
         
@@ -125,7 +126,9 @@ class WhatsappWorker:
         except Exception as e:
             logger.error("Failed to load Swagger definition", error=str(e))
 
-        # 5. Osiguraj Redis Consumer Group
+        # Inicijalizacija Maintenance servisa
+        self.maintenance = MaintenanceService()
+
         try:
             await self.redis.xgroup_create(STREAM_INBOUND, "workers_group", id="$", mkstream=True)
         except redis.ResponseError:
@@ -133,34 +136,37 @@ class WhatsappWorker:
 
         logger.info("Worker ready. Processing loop started.")
         
-        # [NOVO] Brojač taktova za periodičke zadatke (recovery)
         tick = 0
         
-        # 6. Glavna Petlja
         while self.running:
             await self.redis.setex("worker:heartbeat", 30, "alive")
             await self.redis.setex(f"worker:heartbeat:{self.hostname}:{self.worker_id}", 30, "alive")
 
             try:
-                # [NOVO] Skupljamo taskove u listu kako bismo mogli dodati recovery
                 tasks = [
                     self._process_inbound_batch(),
                     self._process_outbound(),
-                    self._process_retries()
+                    self._process_retries(),
+                    self.maintenance.run_daily_cleanup()
                 ]
                 
-                # [NOVO] Recovery ne mora raditi svaku milisekundu. Svakih ~100 ciklusa (cca 1-2 sec) je dovoljno.
+                # [FAZA 1] Recovery (svakih ~100 taktova / ~1-2 sec)
                 if tick % 100 == 0:
                     tasks.append(self._recover_stalled_messages())
 
+                # [NOVO] AUTO-HEAL DLQ (svakih ~300 taktova / ~3-6 sec)
+                # Provjerava ima li mrtvih poruka i vraća ih u život
+                if tick % 300 == 0:
+                    tasks.append(self.queue.auto_heal_dlq())
+
                 await asyncio.gather(*tasks, return_exceptions=True)
                 
-                await asyncio.sleep(0.01)
+                await asyncio.sleep(0.01) # Brzi sleep za responzivnost
                 tick += 1
                 
             except Exception as e:
                 logger.error("Critical Main Loop Error", error=str(e))
-                capture_exception(e) # Sentry
+                capture_exception(e) 
                 await asyncio.sleep(1)
 
         await self.shutdown()
@@ -192,34 +198,26 @@ class WhatsappWorker:
 
     async def _recover_stalled_messages(self):
         """
-        [ENTERPRISE FEATURE]
-        Periodički 'čistač' koji provjerava poruke koje su zapele kod workera 
-        koji su se srušili ili zapeli (nisu poslali ACK).
-        Preuzima vlasništvo nad njima i ponovno ih procesira.
+        [ENTERPRISE] Recovery poruka koje su zapele (timeout 5 minuta).
         """
         if not self.running: return
 
         try:
-            # XAUTOCLAIM: Atomski preuzima pending poruke starije od min_idle_time
-            # Args: stream, group, consumer, min_idle_time(ms), start_id, count
-            # Tražimo poruke koje nitko nije taknuo 60 sekundi (60000 ms)
             claimed = await self.redis.xautoclaim(
                 name=STREAM_INBOUND,
                 groupname="workers_group",
                 consumername=self.worker_id,
-                min_idle_time=60000, 
+                min_idle_time=300000, 
                 start_id="0-0",
                 count=10
             )
             
-            # claimed vraća: (next_start_id, [messages], [deleted_ids])
             messages = claimed[1]
             
             if messages:
                 logger.warning("Recovering stalled messages", count=len(messages))
                 tasks = []
                 for msg_id, payload in messages:
-                    # Ponovno procesiranje (idempotentnost je bitna!)
                     tasks.append(self._process_single_message_transaction(msg_id, payload))
                 
                 if tasks:
@@ -246,10 +244,15 @@ class WhatsappWorker:
             await self.redis.xdel(STREAM_INBOUND, msg_id)
 
         except Exception as e:
-            logger.error("Message processing failed", id=msg_id, error=str(e))
+            safe_payload = sanitize_log_data(payload)
+            logger.error("Message processing failed", id=msg_id, payload=safe_payload, error=str(e))
+            
             MSG_PROCESSED.labels(status="error").inc()
-            capture_exception(e) # Sentry
+            capture_exception(e)
+            
+            # [ENTERPRISE] Spremanje u DLQ (pametni queue s retry logikom)
             await self.queue.store_inbound_dlq(payload, str(e))
+            
             await self.redis.xack(STREAM_INBOUND, "workers_group", msg_id)
             await self.redis.xdel(STREAM_INBOUND, msg_id)
 
@@ -329,7 +332,6 @@ class WhatsappWorker:
                 else:
                     result = {"error": "Tool not found"}
                 
-                # ContextService automatski reže i sprema
                 await self.context.add_message(
                     sender, "tool", 
                     result, 
@@ -347,7 +349,6 @@ class WhatsappWorker:
     async def _check_rate_limit(self, sender: str) -> bool:
         """
         [MODIFIED] Provjera rate limita koristeći atomski Redis Pipeline.
-        Ovo sprječava race condition gdje se ključ inkrementira ali ne dobije TTL.
         """
         key = f"rate:{sender}"
         
@@ -371,7 +372,7 @@ class WhatsappWorker:
             
         except Exception as e:
             logger.error("Outbound processing error", error=str(e))
-            capture_exception(e) # Sentry
+            capture_exception(e) 
             if 'payload' in locals():
                 await self.queue.schedule_retry(payload)
 
@@ -420,7 +421,7 @@ class WhatsappWorker:
     async def shutdown(self):
         logger.info("Worker shutting down...")
         self.running = False
-        await asyncio.sleep(2) 
+        await asyncio.sleep(15)  # [FAZA 1] Dajemo vremena za graceful shutdown
         
         if self.http: await self.http.aclose()
         if self.gateway: await self.gateway.close()

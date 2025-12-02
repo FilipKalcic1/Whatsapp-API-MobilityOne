@@ -1,6 +1,5 @@
 import pytest
 import json
-import numpy as np
 from unittest.mock import MagicMock, AsyncMock, patch, mock_open
 from services.tool_registry import ToolRegistry
 
@@ -10,9 +9,8 @@ SAMPLE_SWAGGER = {
             "get": {
                 "operationId": "get_vehicle",
                 "summary": "Dohvati vozilo",
-                "description": "Vraća detalje.",
                 "parameters": [
-                    {"name": "id", "in": "path", "required": True, "schema": {"type": "string"}}
+                    {"name": "id", "in": "path", "schema": {"type": "string"}}
                 ]
             }
         }
@@ -23,27 +21,29 @@ SAMPLE_SWAGGER = {
 async def test_load_swagger_success_and_caching(redis_client):
     registry = ToolRegistry(redis_client)
     
+    # Mockamo OpenAI za prvi prolaz
     mock_embedding = [0.1, 0.2, 0.3]
-    mock_create = AsyncMock()
-    mock_create.return_value.data = [MagicMock(embedding=mock_embedding)]
-    registry.client.embeddings.create = mock_create
+    registry.client.embeddings.create = AsyncMock()
+    registry.client.embeddings.create.return_value.data = [MagicMock(embedding=mock_embedding)]
 
+    # Mockamo čitanje swaggera s diska
     with patch("builtins.open", mock_open(read_data=json.dumps(SAMPLE_SWAGGER))):
         await registry.load_swagger("swagger.json")
 
     assert registry.is_ready is True
-    
-    # [POPRAVAK] Ključ je 'tool_embed', ne 'tool_embedding'
-    keys = await redis_client.keys("tool_embed:*")
-    assert len(keys) > 0
+    # Provjera da je embedding učitan u memoriju
+    assert len(registry.tool_embeddings) == 1
+    assert registry.tool_embeddings[0]["id"] == "get_vehicle"
 
-    # Drugi prolaz (iz cachea)
-    registry.client.embeddings.create = AsyncMock()
+    # --- DRUGI PROLAZ (Cache Hit) ---
+    # Kreiramo novi registry ali s popunjenim cacheom (simulacija restarta)
     registry_2 = ToolRegistry(redis_client)
-    registry_2.client = registry.client 
+    registry_2.cache_data = registry.cache_data # Prenosimo cache
+    registry_2.client.embeddings.create = AsyncMock() # Resetiramo mock
     
     with patch("builtins.open", mock_open(read_data=json.dumps(SAMPLE_SWAGGER))):
         await registry_2.load_swagger("swagger.json")
     
+    # Ključno: OpenAI se NE SMIJE zvati drugi put
     registry_2.client.embeddings.create.assert_not_called()
-    assert registry_2.is_ready is True
+    assert len(registry_2.tool_embeddings) == 1

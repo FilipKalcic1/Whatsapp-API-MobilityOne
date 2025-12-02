@@ -11,6 +11,51 @@ from services.cache import CacheService
 from services.context import ContextService
 from routers.webhook import get_queue
 
+class FakePipeline:
+    """
+    Simulira Redis Pipeline za verziju 5.x.
+    Pamti naredbe i izvršava ih tek na execute().
+    """
+    def __init__(self, redis):
+        self.redis = redis
+        self.commands = []
+
+    async def __aenter__(self): return self
+    async def __aexit__(self, exc_type, exc_val, exc_tb): pass
+
+    # Ove metode NE SMIJU biti async jer ih kod zove bez await-a
+    def rpush(self, key, value):
+        self.commands.append(("rpush", key, value))
+        return self 
+
+    def expire(self, key, time):
+        self.commands.append(("expire", key, time))
+        return self
+    
+    def ltrim(self, key, start, end):
+         self.commands.append(("ltrim", key, start, end))
+         return self
+
+    def lpush(self, key, value):
+         self.commands.append(("lpush", key, value))
+         return self
+
+    def incr(self, key):
+         self.commands.append(("incr", key))
+         return self
+
+    async def execute(self):
+        results = []
+        for cmd in self.commands:
+            op = cmd[0]
+            args = cmd[1:]
+            # Pozivamo pravu async metodu na FakeRedis-u
+            method = getattr(self.redis, op)
+            res = await method(*args)
+            results.append(res)
+        self.commands = [] 
+        return results
+
 class FakeRedis:
     def __init__(self):
         self.data = {}    
@@ -79,11 +124,7 @@ class FakeRedis:
     async def xack(self, stream, group, id): return 1
     async def xdel(self, stream, id): return 1
     async def xgroup_create(self, stream, group, id="$", mkstream=False): return True
-
-    # [NOVO] Dodano za podršku testiranja worker recovery logike
     async def xautoclaim(self, name, groupname, consumername, min_idle_time=0, start_id="0-0", count=1):
-        # Vraća prazan rezultat jer u testovima obično mockamo povratnu vrijednost
-        # ili koristimo patch, ali metoda mora postojati da bi patch.object radio.
         return "0-0", [], []
 
     async def expire(self, key, time): return True
@@ -91,16 +132,15 @@ class FakeRedis:
     async def zrangebyscore(self, key, min, max, start=None, num=None): return [] 
     async def zrem(self, key, member): return 1
     
-    # Metode koje trebaju za Rate Limiter
+    # Rate Limiter
     async def eval(self, *args, **kwargs): return 0
     async def evalsha(self, *args, **kwargs): return 0
     async def script_load(self, script): return "dummy_sha"
 
-    # Pipeline podrška (vraća self, simulira ponašanje bez transakcija)
-    def pipeline(self): return self
-    async def __aenter__(self): return self
-    async def __aexit__(self, exc_type, exc_val, exc_tb): pass
-    async def execute(self): return []
+    # [KLJUČNO] Vraćamo FakePipeline umjesto self
+    def pipeline(self): 
+        return FakePipeline(self)
+
     async def close(self): pass
     async def aclose(self): pass
 
@@ -111,17 +151,12 @@ def redis_client():
 @pytest_asyncio.fixture
 async def async_client(redis_client):
     queue_service = QueueService(redis_client)
-    
-    # Overrideamo queue dependency jer ga API koristi
     app.dependency_overrides[get_queue] = lambda: queue_service
-    
     await FastAPILimiter.init(redis_client)
-    
     app.state.redis = redis_client
     app.state.queue = queue_service
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
-    
     app.dependency_overrides = {}
