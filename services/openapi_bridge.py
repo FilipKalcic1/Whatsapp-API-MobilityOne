@@ -1,7 +1,9 @@
 import httpx
 import structlog
 import asyncio
-import logging  # <--- 1. NOVO: Dodan import logging
+import logging
+import redis.asyncio as redis
+from redis.exceptions import LockError  # <--- NOVO: Za Redis Lock
 from datetime import timedelta 
 from typing import Dict, Any, Optional
 from tenacity import (
@@ -26,7 +28,7 @@ class OpenAPIGateway:
     def __init__(self, base_url: str):
         self.base_url = base_url.rstrip('/')
         
-        # Connection Pooling za High Concurrency
+        # Connection Pooling
         self.limits = httpx.Limits(max_keepalive_connections=20, max_connections=100)
         
         headers = {}
@@ -34,7 +36,10 @@ class OpenAPIGateway:
             headers["Authorization"] = f"Bearer {settings.MOBILITY_API_TOKEN}"
 
         self.client = httpx.AsyncClient(timeout=15.0, limits=self.limits, headers=headers)
-        self._auth_lock = asyncio.Lock() 
+        
+        # [POPRAVAK] Inicijalizacija Redisa za distribuirano zaključavanje
+        redis_url = getattr(settings, "REDIS_URL", "redis://redis:6379/0")
+        self.redis = redis.from_url(redis_url, encoding="utf-8", decode_responses=True)
 
     async def execute_tool(self, tool_def: Dict[str, Any], params: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -80,13 +85,11 @@ class OpenAPIGateway:
             logger.error("API Error Response", status=e.response.status_code, error=str(e))
             return {"error": True, "message": f"Greška vanjskog sustava: {e.response.status_code}"}
             
-        # Hvatamo i RetryError (tenacity) i RequestError
         except (httpx.RequestError, RetryError) as e:
             logger.error("API Network Failure", error=str(e))
             return {"error": True, "message": "Nisam uspio kontaktirati sustav (Network Error)."}
             
         except Exception as e:
-            # Sve ostalo
             logger.error("Unexpected Gateway Error", error=str(e))
             return {"error": True, "message": "Interna greška sustava."}
 
@@ -95,20 +98,26 @@ class OpenAPIGateway:
         stop=stop_after_attempt(3), 
         wait=wait_exponential(multiplier=1, min=1, max=10), 
         retry=retry_if_exception_type((httpx.RequestError, httpx.TimeoutException)), 
-        # [POPRAVAK] Koristimo logging.WARNING (int) umjesto "warning" (str)
         before_sleep=before_sleep_log(logger, logging.WARNING) 
     )
     async def _do_request(self, method: str, url: str, **kwargs) -> Dict[str, Any]:
         response = await self.client.request(method, url, **kwargs)
 
-        # --- Token Refresh Logika ---
+        # --- Token Refresh Logika (Distribuirana) ---
         if response.status_code == 401:
-            logger.info("Token expired (401), attempting refresh...")
+            logger.info("Token expired (401), attempting distributed refresh...")
             
             refreshed = await self._secure_refresh_token()
             
             if refreshed:
-                raise httpx.RequestError("Token refreshed, forcing retry...")
+                # Ažuriraj header za ponovni pokušaj
+                if "headers" in kwargs:
+                    kwargs["headers"]["Authorization"] = self.client.headers["Authorization"]
+                else:
+                    kwargs["headers"] = {"Authorization": self.client.headers["Authorization"]}
+                
+                # Manual retry call
+                response = await self.client.request(method, url, **kwargs)
             else:
                 logger.error("Token refresh failed.")
                 return {"error": True, "message": "Autorizacija neuspjela."}
@@ -124,33 +133,75 @@ class OpenAPIGateway:
         return response.json()
 
     async def _secure_refresh_token(self) -> bool:
+        """
+        Koristi Redis Lock da osigura da samo jedan worker osvježava token.
+        """
         if not settings.MOBILITY_AUTH_URL: return False
 
-        if self._auth_lock.locked():
-            async with self._auth_lock: return True
-            
-        async with self._auth_lock:
-            try:
-                logger.info("Refreshing token via OAuth2...")
+        TOKEN_KEY = "mobility_access_token"
+        LOCK_KEY = "mobility_token_refresh_lock"
+
+        # 1. Prvo provjeri u Redisu (možda ga je netko već osvježio)
+        cached_token = await self.redis.get(TOKEN_KEY)
+        if cached_token:
+            current_token = self.client.headers.get("Authorization", "").replace("Bearer ", "")
+            if cached_token != current_token:
+                self.client.headers["Authorization"] = f"Bearer {cached_token}"
+                logger.info("Loaded fresh token from Redis cache (Fast Path).")
+                return True
+
+        # 2. Pokušaj zaključati proces (Distributed Lock)
+        try:
+            # blocking_timeout=2.0 znači: čekaj 2 sekunde da se brava oslobodi
+            async with self.redis.lock(LOCK_KEY, timeout=10, blocking_timeout=2.0):
+                
+                # Double-check inside lock
+                cached_token = await self.redis.get(TOKEN_KEY)
+                if cached_token:
+                    current_token = self.client.headers.get("Authorization", "").replace("Bearer ", "")
+                    if cached_token != current_token:
+                        self.client.headers["Authorization"] = f"Bearer {cached_token}"
+                        return True
+
+                logger.info("Acquired lock. Refreshing token via OAuth2...")
+                
                 payload = {
                     "client_id": settings.MOBILITY_CLIENT_ID,
                     "client_secret": settings.MOBILITY_CLIENT_SECRET,
                     "grant_type": "client_credentials",
                     "scope": settings.MOBILITY_SCOPE
                 }
-                async with httpx.AsyncClient() as client:
-                    resp = await client.post(settings.MOBILITY_AUTH_URL, data=payload, timeout=10.0)
+                
+                async with httpx.AsyncClient() as auth_client:
+                    resp = await auth_client.post(settings.MOBILITY_AUTH_URL, data=payload, timeout=10.0)
                     resp.raise_for_status()
                     
-                    token = resp.json().get("access_token")
-                    if token:
-                        self.client.headers["Authorization"] = f"Bearer {token}"
-                        logger.info("Token refreshed successfully.")
+                    data = resp.json()
+                    new_token = data.get("access_token")
+                    expires_in = data.get("expires_in", 3600)
+                    
+                    if new_token:
+                        await self.redis.set(TOKEN_KEY, new_token, ex=int(expires_in) - 60)
+                        self.client.headers["Authorization"] = f"Bearer {new_token}"
+                        logger.info("Token refreshed and saved to Redis.")
                         return True
-            except Exception as e:
-                logger.error("Token refresh failed", error=str(e))
-                return False
+                        
+        except LockError:
+            # Netko drugi drži bravu, pričekaj malo i probaj učitati iz cachea
+            logger.info("Lock is busy. Waiting for other worker...")
+            await asyncio.sleep(1.0)
+            cached_token = await self.redis.get(TOKEN_KEY)
+            if cached_token:
+                self.client.headers["Authorization"] = f"Bearer {cached_token}"
+                return True
+            return False
+
+        except Exception as e:
+            logger.error("Token refresh critical failure", error=str(e))
+            return False
+            
         return False
 
     async def close(self):
         await self.client.aclose()
+        await self.redis.close()
