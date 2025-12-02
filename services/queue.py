@@ -69,9 +69,11 @@ class QueueService:
                 except (ValueError, TypeError):
                     current_retries = 0
                 
+                # services/queue.py - POPRAVAK
                 if current_retries >= 3:
-                    logger.error("Message is TOXIC (3x fail). Moving to Permanent DLQ.", sender=payload.get("sender"))
                     await self.redis.rpush(QUEUE_DLQ_PERMANENT, raw_data)
+                    # Dodaj ovo: Neka lista istekne za 14 dana (1209600 sekundi) ako se ne dira
+                    await self.redis.expire(QUEUE_DLQ_PERMANENT, 1209600)
                 else:
                     payload["retry_count"] = current_retries + 1
                     await self.redis.xadd(STREAM_INBOUND, payload)
