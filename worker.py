@@ -11,6 +11,8 @@ from prometheus_client import start_http_server, Counter, Histogram
 from typing import Optional, Dict, List, Any
 from sentry_sdk import capture_exception
 
+
+from models import UserMapping  
 from config import get_settings
 from logger_config import configure_logger
 from database import AsyncSessionLocal
@@ -21,6 +23,7 @@ from services.openapi_bridge import OpenAPIGateway
 from services.user_service import UserService
 from services.ai import analyze_intent
 from services.maintenance import MaintenanceService
+import sys 
 
 settings = get_settings()
 configure_logger()
@@ -87,6 +90,10 @@ class WhatsappWorker:
         self.context = None
         self.registry = None
         self.maintenance = None
+        self.consecutive_errors = 0 
+        self.panic_threshold = 5  
+        self.panic_sleep = 30     
+
 
     async def start(self):
         """Inicijalizacija infrastrukture i pokretanje glavne petlje."""
@@ -161,13 +168,32 @@ class WhatsappWorker:
 
                 await asyncio.gather(*tasks, return_exceptions=True)
                 
+                if self.consecutive_errors > 0:
+                    logger.info("System recovered. Error counter reset.", prev_errors=self.consecutive_errors)
+                    self.consecutive_errors = 0
+
                 await asyncio.sleep(0.01) # Brzi sleep za responzivnost
                 tick += 1
                 
             except Exception as e:
-                logger.error("Critical Main Loop Error", error=str(e))
+                self.consecutive_errors += 1
+                logger.error("Critical Main Loop Error", error=str(e), attempt=self.consecutive_errors)
                 capture_exception(e) 
-                await asyncio.sleep(1)
+
+                if self.consecutive_errors >= self.panic_threshold:
+                    logger.critical("Fatal error loop. Exiting to allow Docker restart.")
+                    sys.exit(1) 
+                    
+                    # Docker će vidjeti exit code 1 i napraviti restart
+                    # Spavamo duže da ne gušimo CPU i disk logovima
+                    await asyncio.sleep(self.panic_sleep)
+                    
+                    # Opcionalno: Resetiramo brojač nakon spavanja da probamo opet "od nule"
+                    # ili ga ostavimo visokim da idući fail opet triggera paniku.
+                    # Ovdje ga je sigurnije ne resetirati odmah nego pustiti da 'try' blok prođe.
+                else:
+                    # Obični kratki sleep za manje greške
+                    await asyncio.sleep(1)
 
         await self.shutdown()
 
@@ -256,46 +282,89 @@ class WhatsappWorker:
             await self.redis.xack(STREAM_INBOUND, "workers_group", msg_id)
             await self.redis.xdel(STREAM_INBOUND, msg_id)
 
+    # --- EMAIL NAČIN --- 
+    # async def _handle_onboarding(self, sender: str, text: str, service: UserService):
+    #     key = f"onboarding:{sender}"
+    #     state = await self.redis.get(key)
+    #     
+    #     if state == "WAITING_EMAIL":
+    #         if "@" not in text or len(text) < 5:
+    #             await self.queue.enqueue(sender, "⚠️ Neispravan format e-maila. Molim pokušajte ponovo.")
+    #             return
+    #
+    #         # Ovdje se prije prosljeđivao email servisu
+    #         result = await service.onboard_user(sender, text)
+    #         
+    #         if result:
+    #             name, vehicle_info = result
+    #             await self.redis.delete(key)
+    #             
+    #             msg = (
+    #                 f"✅ *Identitet potvrđen!*\n"
+    #                 f"👤 {name}\n"
+    #                 f"🚗 {vehicle_info}\n\n"
+    #                 f"Sustav je spreman. Kako vam mogu pomoći?"
+    #             )
+    #             await self.queue.enqueue(sender, msg)
+    #         else:
+    #             await self.queue.enqueue(
+    #                 sender, 
+    #                 f"⛔ E-mail '{text}' nije pronađen. Kontaktirajte administratora."
+    #             )
+    #     else:
+    #         welcome_msg = "👋 Dobrodošli! Molim upišite vašu službenu e-mail adresu."
+    #         await self.queue.enqueue(sender, welcome_msg)
+    #         await self.redis.setex(key, 900, "WAITING_EMAIL")
+
+
     async def _handle_business_logic(self, sender: str, text: str):
         async with AsyncSessionLocal() as session:
             user_service = UserService(session, self.gateway)
             
+            # Prvi korak je provjera postoji li korisnik već u našem lokalnom cacheu.
             user = await user_service.get_active_identity(sender)
             
+            # Ako korisnik nije pronađen, pokrećemo proces automatskog onboardinga.
             if not user:
-                await self._handle_onboarding(sender, text, user_service)
+                user = await self._perform_auto_onboard(sender, user_service)
+
+            # Ako nakon pokušaja onboardinga korisnik i dalje ne postoji, prekidamo proces.
+            if not user:
                 return
 
+            # U ovom trenutku sigurno imamo validnog korisnika i GUID, pa pripremamo AI kontekst.
             identity_context = (
-                f"SYSTEM ENFORCEMENT: You are acting on behalf of the user '{user.display_name}'. "
-                f"The Internal API User Identifier is '{user.api_identity}'. "
-                f"RULE: For EVERY tool call you generate, you MUST set the parameter 'User' (or 'email') to '{user.api_identity}'."
-                f"Do NOT ask the user for their username."
+                f"SYSTEM ENFORCEMENT: You are acting on behalf of '{user.display_name}'. "
+                f"The Internal API User Identifier (GUID) is '{user.api_identity}'. "
+                f"RULE: For EVERY tool call, you MUST set 'User' or 'PersonId' to '{user.api_identity}'."
             )
             
+            # Spremanje poruke i pokretanje AI logike.
             await self.context.add_message(sender, "user", text)
             await self._run_ai_loop(sender, text, identity_context)
 
-    async def _handle_onboarding(self, sender: str, text: str, service: UserService):
-        key = f"onboarding:{sender}"
-        state = await self.redis.get(key)
+    async def _perform_auto_onboard(self, sender: str, service: UserService) -> Optional[UserMapping]:
+        """Izdvojena logika onboardinga za čišći glavni flow."""
+        logger.info("Unknown user, attempting auto-onboard", sender=sender)
         
-        if state == "WAITING_EMAIL":
-            if "@" not in text or len(text) < 5:
-                await self.queue.enqueue(sender, "Neispravan format e-maila. Molim pokušajte ponovo.")
-                return
+        result = await service.try_auto_onboard(sender)
+        
+        # Ako onboarding nije uspio, šaljemo poruku odbijanja i vraćamo None.
+        if not result:
+            logger.warning("Access denied", sender=sender)
+            await self.queue.enqueue(
+                sender, 
+                "⛔ Vaš broj mobitela nije pronađen u sustavu.\nMolimo kontaktirajte administratora flote."
+            )
+            return None
 
-            name = await service.onboard_user(sender, text)
-            
-            if name:
-                await self.redis.delete(key)
-                await self.queue.enqueue(sender, f"✅ Povezano! Pozdrav {name}, vaš račun je potvrđen.")
-            else:
-                await self.queue.enqueue(sender, f"❌ E-mail '{text}' nije pronađen u sustavu.")
-        else:
-            welcome_msg = "👋 Dobrodošli u MobilityOne AI! Molim upišite vašu službenu e-mail adresu."
-            await self.queue.enqueue(sender, welcome_msg)
-            await self.redis.setex(key, 900, "WAITING_EMAIL")
+        # Ako je uspio, šaljemo dobrodošlicu.
+        name, vehicle = result
+        welcome_msg = f"👋 Bok {name}! Prepoznao sam tvoj broj.\nTvoje vozilo: {vehicle}\nKako ti mogu pomoći?"
+        await self.queue.enqueue(sender, welcome_msg)
+        
+        # Vraćamo svježe učitani objekt korisnika iz baze.
+        return await service.get_active_identity(sender)
 
     async def _run_ai_loop(self, sender, text, system_ctx):
         """AI Petlja: Optimizirana za brzinu."""
@@ -436,6 +505,7 @@ async def main():
     await worker.start()
 
 if __name__ == "__main__":
+
     try:    
         asyncio.run(main())
     except KeyboardInterrupt:

@@ -152,7 +152,6 @@ class OpenAPIGateway:
 
         # 2. Pokušaj zaključati proces (Distributed Lock)
         try:
-            # blocking_timeout=2.0 znači: čekaj 2 sekunde da se brava oslobodi
             async with self.redis.lock(LOCK_KEY, timeout=10, blocking_timeout=2.0):
                 
                 # Double-check inside lock
@@ -165,12 +164,17 @@ class OpenAPIGateway:
 
                 logger.info("Acquired lock. Refreshing token via OAuth2...")
                 
+                # [POPRAVAK] Konstrukcija payload-a prema Damirovom curl primjeru
                 payload = {
                     "client_id": settings.MOBILITY_CLIENT_ID,
                     "client_secret": settings.MOBILITY_CLIENT_SECRET,
                     "grant_type": "client_credentials",
-                    "scope": settings.MOBILITY_SCOPE
+                    "audience": settings.MOBILITY_AUDIENCE  # <--- OVO JE FALILO
                 }
+                
+                # Šaljemo scope SAMO ako je definiran i nije prazan string
+                if settings.MOBILITY_SCOPE and settings.MOBILITY_SCOPE.strip():
+                    payload["scope"] = settings.MOBILITY_SCOPE
                 
                 async with httpx.AsyncClient() as auth_client:
                     resp = await auth_client.post(settings.MOBILITY_AUTH_URL, data=payload, timeout=10.0)
@@ -187,7 +191,6 @@ class OpenAPIGateway:
                         return True
                         
         except LockError:
-            # Netko drugi drži bravu, pričekaj malo i probaj učitati iz cachea
             logger.info("Lock is busy. Waiting for other worker...")
             await asyncio.sleep(1.0)
             cached_token = await self.redis.get(TOKEN_KEY)

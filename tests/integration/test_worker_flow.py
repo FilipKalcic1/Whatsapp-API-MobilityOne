@@ -46,7 +46,7 @@ async def test_worker_full_successful_flow(redis_client):
         mock_user_service = MockUserService.return_value
         mock_user = MagicMock()
         mock_user.display_name = "Test User"
-        mock_user.api_identity = "test@email.com"
+        mock_user.api_identity = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
         mock_user_service.get_active_identity = AsyncMock(return_value=mock_user)
         
         payload = {"sender": "38599", "text": "Gdje je auto?"}

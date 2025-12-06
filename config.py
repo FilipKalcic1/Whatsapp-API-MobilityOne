@@ -28,13 +28,18 @@ class Settings(BaseSettings):
     MOBILITY_API_URL: str 
     MOBILITY_API_TOKEN: Optional[str] = None
     
+    # [POPRAVAK] Ostavljamo scope praznim po defaultu (None)
     # Auth
     MOBILITY_AUTH_URL: Optional[str] = None
     MOBILITY_CLIENT_ID: Optional[str] = None
     MOBILITY_CLIENT_SECRET: Optional[str] = None
-    MOBILITY_SCOPE: str = "add-case"
+    MOBILITY_SCOPE: Optional[str] = None 
     
-    # [NOVO] Ovo je falilo
+    # [NOVO] Parametar koji je falio (iz Damirovog curla)
+    MOBILITY_AUDIENCE: str = "none"
+
+    MOBILITY_TENANT_ID: Optional[str] = None
+    
     MOBILITY_USER_CHECK_ENDPOINT: str = "/PersonData/{personIdOrEmail}"
     
     SWAGGER_URL: Optional[str] = None
