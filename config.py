@@ -1,6 +1,6 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
-from typing import Literal, Optional
+from typing import Literal, Optional, List, Dict # [NOVO] Dodan Dict
 
 class Settings(BaseSettings):
     APP_ENV: Literal["development", "production", "testing"] = "development"
@@ -26,23 +26,52 @@ class Settings(BaseSettings):
 
     # --- MOBILITY ONE API ---
     MOBILITY_API_URL: str 
-    MOBILITY_API_TOKEN: Optional[str] = None
+    MOBILITY_API_KEY: Optional[str] = None
     
-    # [POPRAVAK] Ostavljamo scope praznim po defaultu (None)
     # Auth
     MOBILITY_AUTH_URL: Optional[str] = None
     MOBILITY_CLIENT_ID: Optional[str] = None
     MOBILITY_CLIENT_SECRET: Optional[str] = None
     MOBILITY_SCOPE: Optional[str] = None 
-    
-    # [NOVO] Parametar koji je falio (iz Damirovog curla)
     MOBILITY_AUDIENCE: str = "none"
 
     MOBILITY_TENANT_ID: Optional[str] = None
-    
     MOBILITY_USER_CHECK_ENDPOINT: str = "/PersonData/{personIdOrEmail}"
     
+    # Opcionalni override
     SWAGGER_URL: Optional[str] = None
+
+    ACTIVE_SERVICES: Dict[str, str] = {
+        "automation": "v1.0.0",   
+        "tenantmgt": "v2.0.0-alpha",     
+    }
+
+    @property
+    def swagger_sources(self) -> List[str]:
+        """
+        Pametno generira listu svih Swagger URL-ova poštujući verzije.
+        """
+        sources = []
+
+        # 1. Ručni override (ako postoji)
+        if self.SWAGGER_URL:
+            sources.append(self.SWAGGER_URL)
+
+        # 2. Dinamičko generiranje linkova
+        if self.MOBILITY_API_URL and self.MOBILITY_API_URL.startswith("http"):
+            base_url = self.MOBILITY_API_URL.rstrip('/')
+            
+            # [POPRAVAK] Iteriramo kroz (servis, verzija)
+            for service, version in self.ACTIVE_SERVICES.items():
+                # Format: .../{service}/swagger/{version}/swagger.json
+                url = f"{base_url}/{service}/swagger/{version}/swagger.json"
+                sources.append(url)
+        else:
+            # Fallback na lokalne datoteke
+            for service in self.ACTIVE_SERVICES.keys():
+                sources.append(f"temporary/{service}.json")
+
+        return list(set(sources))
     
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

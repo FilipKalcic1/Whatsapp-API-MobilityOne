@@ -85,34 +85,45 @@ async def analyze_intent(
 
 # --- Helper Methods (Clean Code & Readability) ---
 
+# services/ai.py
+
 def _construct_messages(history: list, text: str, instruction: str | None) -> list:
     """
-    Rekonstruira povijest razgovora i dodaje ključne sistemske instrukcije.
+    [FINAL FIX] Eksplicitno definira polja za svaku ulogu radi striktne API validacije.
     """
     msgs = [{"role": "system", "content": SYSTEM_PROMPT}]
     
-
     if instruction:
         msgs.append({"role": "system", "content": instruction})
     
     for h in history:
-        # Sanitizacija povijesti: Uklanjamo None vrijednosti da ne srušimo OpenAI lib
-        valid_msg = {
-            "role": h.get("role"),
-            "content": h.get("content")
-        }
+        role = h.get("role")
+        if not role: continue 
+
+        valid_msg = {"role": role}
+
+        if role == "assistant":
+            if h.get("tool_calls"):
+                # Pomoćnik poziva alat: Content MORA biti None
+                valid_msg["content"] = None 
+                valid_msg["tool_calls"] = h["tool_calls"]
+            else:
+                valid_msg["content"] = h.get("content")
         
-        if "tool_calls" in h:
-            valid_msg["tool_calls"] = h["tool_calls"]
-        
-        if "tool_call_id" in h:
-            valid_msg["tool_call_id"] = h["tool_call_id"]
+        elif role == "tool":
+            # Ako fali ID poziva, ovo je korumpirana poruka (zombi) - preskoči je!
+            if not h.get("tool_call_id") or not h.get("name"):
+                 continue 
             
-        if "name" in h:
+            valid_msg["tool_call_id"] = h["tool_call_id"]
             valid_msg["name"] = h["name"]
+            valid_msg["content"] = h.get("content") 
+            
+        else:
+            valid_msg["content"] = h.get("content")
             
         msgs.append(valid_msg)
-
+        
     if text:
         msgs.append({"role": "user", "content": text})
         
@@ -134,7 +145,7 @@ async def _handle_tool_decision(primary_tool, all_tools, history, text, tools, r
             "tool": function_name,
             "parameters": parameters,
             "tool_call_id": primary_tool.id,
-            "raw_tool_calls": all_tools, 
+            "raw_tool_calls": [t.model_dump() for t in all_tools], 
             "response_text": None
         }
     except orjson.JSONDecodeError:

@@ -116,9 +116,6 @@ class UserService:
             return None
 
     async def _resolve_vehicle_name(self, person_guid: str) -> str:
-            """
-            Dohvaća AKTIVNO vozilo koristeći /automation/MasterData endpoint.
-            """
             if not self.default_tenant_id:
                 return "Nema dodijeljenog vozila"
 
@@ -130,68 +127,37 @@ class UserService:
                     "operationId": "GetMasterData"
                 }
                 
-                params = {
-                    "personId": person_guid,
-                    "x-tenant": self.default_tenant_id
-                }
+                # Parametri samo za query
+                params = {"personId": person_guid}
                 
-                response = await self.gateway.execute_tool(tool_def, params)
+                # [POPRAVAK] Tenant ide u kontekst, ne u params
+                fake_context = {"tenant_id": self.default_tenant_id}
                 
-                # Normalizacija odgovora u listu radi lakše obrade
-                raw_data = response.get("Data", []) if "Data" in response else response
+                # Poziv sada ide kroz popravljeni openapi_bridge koji dodaje Token + Tenant
+                response = await self.gateway.execute_tool(tool_def, params, user_context=fake_context)
+                
+                # Obrada rezultata
+                raw_data = response.get("Data", []) if isinstance(response, dict) else response
                 items = raw_data if isinstance(raw_data, list) else [raw_data]
+
+                if not items: return "Nema dodijeljenog vozila"
                 
-                if not items:
-                    return "Nema dodijeljenog vozila"
+                # Filtriranje
+                candidates = [i for i in items if isinstance(i, dict) and (i.get('LicencePlate') or i.get('VehicleLicencePlate'))]
+                if not candidates: return "Nema dodijeljenog vozila"
 
-                # 1. KORAK: Filtriranje (Tražimo najrelevantniji zapis)
-                # Ako API vraća listu, moramo naći onaj koji je AKTIVAN.
-                # (Ovdje pretpostavljam da postoji neki indikator, npr. 'IsActive' ili datum. 
-                # Ako nema statusa, uzimamo zadnji ili prvi, ali svjesno).
+                veh = candidates[0]
+                brand = veh.get('Manufacturer') or veh.get('VehicleManufacturer', '')
+                model = veh.get('Model') or veh.get('VehicleModel', '')
+                plate = veh.get('LicencePlate') or veh.get('VehicleLicencePlate', '')
                 
-                selected_vehicle = None
-                
-                # Primjer logike: Preferiraj onaj koji ima podatke o tablici
-                # Možeš dodati i provjeru: if item.get('Status') == 'Active'
-                
-
-
-                candidates = [
-                    item for item in items 
-                    if (item.get('LicencePlate') or item.get('VehicleLicencePlate'))
-                ]
-
-                if not candidates:
-                    return "Nema dodijeljenog vozila"
-
-                # Ako ima više kandidata, idealno bi bilo sortirati po datumu dodjele 
-                # Ovdje uzimamo prvi iz filtrirane liste (ili zadnji ako API vraća kronološki)
-                selected_vehicle = candidates[0] 
-
-                # 2. KORAK: Ekstrakcija podataka
-                brand = selected_vehicle.get('Manufacturer') or selected_vehicle.get('VehicleManufacturer', '')
-                model = selected_vehicle.get('Model') or selected_vehicle.get('VehicleModel', '')
-                plate = selected_vehicle.get('LicencePlate') or selected_vehicle.get('VehicleLicencePlate', '')
-                
-                # Clean up strings (strip whitespace)
-                brand = str(brand).strip()
-                model = str(model).strip()
-                plate = str(plate).strip()
-
-                if not brand and not plate:
-                    return "Nema dodijeljenog vozila"
-
-                # Formatiranje ispisa
-                full_name = f"{brand} {model}".strip()
-                if plate:
-                    full_name = f"{full_name} ({plate})"
-                
-                return full_name.strip()
+                full = f"{brand} {model}".strip()
+                return f"{full} ({plate})" if plate else full
                 
             except Exception as e:
-                # Dodaj person_guid u log da znaš točno KOME nije našao vozilo
-                logger.warning(f"Vehicle lookup failed for person {person_guid}", error=str(e))
+                logger.warning(f"Vehicle lookup failed", person=person_guid, error=str(e))
                 return "Nema dodijeljenog vozila"
+
     async def _persist_mapping(self, phone: str, guid: str, name: str) -> None:
         """
         Sprema ili ažurira korisnika u lokalnoj bazi.

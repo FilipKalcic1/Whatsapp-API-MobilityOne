@@ -92,110 +92,116 @@ class WhatsappWorker:
         self.maintenance = None
         self.consecutive_errors = 0 
         self.panic_threshold = 5  
-        self.panic_sleep = 30     
+        self.panic_sleep = 30    
+        self.default_tenant_id = getattr(settings, "MOBILITY_TENANT_ID", None) 
 
 
     async def start(self):
-        """Inicijalizacija infrastrukture i pokretanje glavne petlje."""
-        logger.info("Worker starting", id=self.worker_id, host=self.hostname)
+            """Inicijalizacija infrastrukture i pokretanje glavne petlje."""
+            logger.info("Worker starting", id=self.worker_id, host=self.hostname)
 
-        if settings.SENTRY_DSN:
-            sentry_sdk.init(
-                dsn=settings.SENTRY_DSN,
-                environment=settings.APP_ENV,
-                traces_sample_rate=0.1, 
-            )
-
-        try:
-            start_http_server(8001)
-            logger.info("Prometheus metrics server running on port 8001")
-        except Exception as e:
-            logger.warning("Failed to start metrics server", error=str(e))
-        
-        self.redis = redis.from_url(settings.REDIS_URL, decode_responses=True)
-        self.http = httpx.AsyncClient(timeout=15.0)
-        self.queue = QueueService(self.redis)
-        self.context = ContextService(self.redis)
-        
-        if settings.MOBILITY_API_URL:
-            self.gateway = OpenAPIGateway(base_url=settings.MOBILITY_API_URL)
-        else:
-            logger.warning("MOBILITY_API_URL not set. AI tools will fail.")
-
-        self.registry = ToolRegistry(self.redis)
-        swagger_src = settings.SWAGGER_URL or "swagger.json"
-        
-        try:
-            logger.info(f"Loading swagger from: {swagger_src}")
-            await self.registry.load_swagger(swagger_src)
-            if swagger_src.startswith("http"):
-                asyncio.create_task(self.registry.start_auto_update(swagger_src))
-        except Exception as e:
-            logger.error("Failed to load Swagger definition", error=str(e))
-
-        # Inicijalizacija Maintenance servisa
-        self.maintenance = MaintenanceService()
-
-        try:
-            await self.redis.xgroup_create(STREAM_INBOUND, "workers_group", id="$", mkstream=True)
-        except redis.ResponseError:
-            pass 
-
-        logger.info("Worker ready. Processing loop started.")
-        
-        tick = 0
-        
-        while self.running:
-            await self.redis.setex("worker:heartbeat", 30, "alive")
-            await self.redis.setex(f"worker:heartbeat:{self.hostname}:{self.worker_id}", 30, "alive")
-
+            # 1. Sentry Monitoring
+            if settings.SENTRY_DSN:
+                sentry_sdk.init(
+                    dsn=settings.SENTRY_DSN,
+                    environment=settings.APP_ENV,
+                    traces_sample_rate=0.1, 
+                )
+            
+            # 2. Prometheus Metrike
             try:
-                tasks = [
-                    self._process_inbound_batch(),
-                    self._process_outbound(),
-                    self._process_retries(),
-                    self.maintenance.run_daily_cleanup()
-                ]
-                
-                # [FAZA 1] Recovery (svakih ~100 taktova / ~1-2 sec)
-                if tick % 100 == 0:
-                    tasks.append(self._recover_stalled_messages())
-
-                # [NOVO] AUTO-HEAL DLQ (svakih ~300 taktova / ~3-6 sec)
-                # Provjerava ima li mrtvih poruka i vraća ih u život
-                if tick % 300 == 0:
-                    tasks.append(self.queue.auto_heal_dlq())
-
-                await asyncio.gather(*tasks, return_exceptions=True)
-                
-                if self.consecutive_errors > 0:
-                    logger.info("System recovered. Error counter reset.", prev_errors=self.consecutive_errors)
-                    self.consecutive_errors = 0
-
-                await asyncio.sleep(0.01) # Brzi sleep za responzivnost
-                tick += 1
-                
+                start_http_server(8001)
+                logger.info("Prometheus metrics server running on port 8001")
             except Exception as e:
-                self.consecutive_errors += 1
-                logger.error("Critical Main Loop Error", error=str(e), attempt=self.consecutive_errors)
-                capture_exception(e) 
+                logger.warning("Failed to start metrics server", error=str(e))
+            
+            # 3. Infrastruktura (Redis, HTTP, Queue, Context)
+            self.redis = redis.from_url(settings.REDIS_URL, decode_responses=True)
+            self.http = httpx.AsyncClient(timeout=15.0)
+            self.queue = QueueService(self.redis)
+            self.context = ContextService(self.redis)
+            
+            # 4. Inicijalizacija API Gateway-a
+            if settings.MOBILITY_API_URL:
+                # Provjera ključa (KEY umjesto TOKEN) radi debugiranja
+                key_status = "SET" if settings.MOBILITY_API_KEY else "MISSING"
+                logger.info("Gateway Init", url=settings.MOBILITY_API_URL, key_status=key_status)
+                
+                self.gateway = OpenAPIGateway(base_url=settings.MOBILITY_API_URL)
+            else:
+                logger.warning("MOBILITY_API_URL not set. AI tools will fail.")
 
-                if self.consecutive_errors >= self.panic_threshold:
-                    logger.critical("Fatal error loop. Exiting to allow Docker restart.")
-                    sys.exit(1) 
+            # 5. [CLEAN CODE] Učitavanje Swaggera iz centralne konfiguracije
+            self.registry = ToolRegistry(self.redis)
+            
+            # Worker ne mora znati detalje, samo vrti listu koju mu daje config.py
+            for src in settings.swagger_sources:
+                try:
+                    logger.info(f"Loading swagger source", source=src)
+                    await self.registry.load_swagger(src)
                     
-                    # Docker će vidjeti exit code 1 i napraviti restart
-                    # Spavamo duže da ne gušimo CPU i disk logovima
-                    await asyncio.sleep(self.panic_sleep)
-                    
-                    # Opcionalno: Resetiramo brojač nakon spavanja da probamo opet "od nule"
-                    # ili ga ostavimo visokim da idući fail opet triggera paniku.
-                    # Ovdje ga je sigurnije ne resetirati odmah nego pustiti da 'try' blok prođe.
-                else:
-                    # Obični kratki sleep za manje greške
-                    await asyncio.sleep(1)
+                    # Auto-update samo za HTTP linkove
+                    if src.startswith("http"):
+                        asyncio.create_task(self.registry.start_auto_update(src))
+                except Exception as e:
+                    logger.error(f"Failed to load swagger source", source=src, error=str(e))
 
-        await self.shutdown()
+            # 6. Maintenance Servis
+            self.maintenance = MaintenanceService()
+
+            # 7. Redis Stream Grupa
+            try:
+                await self.redis.xgroup_create(STREAM_INBOUND, "workers_group", id="$", mkstream=True)
+            except redis.ResponseError:
+                pass 
+
+            logger.info("Worker ready. Processing loop started.")
+            
+            tick = 0
+            
+            # 8. Glavna Petlja
+            while self.running:
+                await self.redis.setex("worker:heartbeat", 30, "alive")
+                await self.redis.setex(f"worker:heartbeat:{self.hostname}:{self.worker_id}", 30, "alive")
+
+                try:
+                    tasks = [
+                        self._process_inbound_batch(),
+                        self._process_outbound(),
+                        self._process_retries(),
+                        self.maintenance.run_daily_cleanup()
+                    ]
+                    
+                    # Recovery mehanizmi
+                    if tick % 100 == 0:
+                        tasks.append(self._recover_stalled_messages())
+
+                    # Auto-heal DLQ
+                    if tick % 300 == 0:
+                        tasks.append(self.queue.auto_heal_dlq())
+
+                    await asyncio.gather(*tasks, return_exceptions=True)
+                    
+                    if self.consecutive_errors > 0:
+                        logger.info("System recovered. Error counter reset.", prev_errors=self.consecutive_errors)
+                        self.consecutive_errors = 0
+
+                    await asyncio.sleep(0.01) 
+                    tick += 1
+                    
+                except Exception as e:
+                    self.consecutive_errors += 1
+                    logger.error("Critical Main Loop Error", error=str(e), attempt=self.consecutive_errors)
+                    capture_exception(e) 
+
+                    if self.consecutive_errors >= self.panic_threshold:
+                        logger.critical("Fatal error loop. Exiting to allow Docker restart.")
+                        sys.exit(1) 
+                        await asyncio.sleep(self.panic_sleep)
+                    else:
+                        await asyncio.sleep(1)
+
+            await self.shutdown()
 
     async def _process_inbound_batch(self):
         if not self.running: return
@@ -321,28 +327,49 @@ class WhatsappWorker:
         async with AsyncSessionLocal() as session:
             user_service = UserService(session, self.gateway)
             
-            # Prvi korak je provjera postoji li korisnik već u našem lokalnom cacheu.
+            # 1. Provjera identiteta
             user = await user_service.get_active_identity(sender)
             
-            # Ako korisnik nije pronađen, pokrećemo proces automatskog onboardinga.
             if not user:
                 user = await self._perform_auto_onboard(sender, user_service)
 
-            # Ako nakon pokušaja onboardinga korisnik i dalje ne postoji, prekidamo proces.
             if not user:
                 return
 
-            # U ovom trenutku sigurno imamo validnog korisnika i GUID, pa pripremamo AI kontekst.
+            # 2. Dohvat informacija o vozilu (za System Prompt)
+            vehicle_info = "Nema dodijeljenog vozila"
+            try:
+                vehicle_info = await user_service._resolve_vehicle_name(user.api_identity)
+            except Exception:
+                pass
+
+            # 3. Kreiranje LOKALNOG konteksta (Request Context)
+            request_context = {
+                "tenant_id": self.default_tenant_id,
+                "user_guid": user.api_identity,
+                "user_name": user.display_name,
+                "phone": sender
+            }
+
+            # 4. [FIX] Priprema System Prompta - Dodana činjenica o broju
             identity_context = (
-                f"SYSTEM ENFORCEMENT: You are acting on behalf of '{user.display_name}'. "
-                f"The Internal API User Identifier (GUID) is '{user.api_identity}'. "
-                f"RULE: For EVERY tool call, you MUST set 'User' or 'PersonId' to '{user.api_identity}'."
+                f"SYSTEM IDENTITY PROTOCOL:\n"
+                f"You are the assistant for '{user.display_name}'. The following are established FACTS about the user:\n"
+                f"FACT: User's Full Name is '{user.display_name}'\n"
+                f"FACT: User's Internal PersonId (GUID) is '{user.api_identity}'\n"
+                f"FACT: User's Phone Number is '{sender}'\n"
+                f"FACT: User's Vehicle Status is '{vehicle_info}'\n"
+                f"FACT: My TenantId is '{self.default_tenant_id}'\n\n"
+                f"CRITICAL RULES:\n"
+                f"1. You MUST answer simple, direct questions about the User's name or identity (e.g., 'What is my name?', 'What is my phone number?') using the FACTS provided above, without calling a tool.\n"
+                f"2. When a tool asks for 'personId', 'driverId' or 'userId', AUTOMATICALLY use the GUID '{user.api_identity}'.\n"
+                f"3. Never ask the user for their ID, you already have it.\n"
             )
             
-            # Spremanje poruke i pokretanje AI logike.
             await self.context.add_message(sender, "user", text)
-            await self._run_ai_loop(sender, text, identity_context)
-
+            
+            await self._run_ai_loop(sender, text, identity_context, request_context)
+                
     async def _perform_auto_onboard(self, sender: str, service: UserService) -> Optional[UserMapping]:
         """Izdvojena logika onboardinga za čišći glavni flow."""
         logger.info("Unknown user, attempting auto-onboard", sender=sender)
@@ -366,8 +393,9 @@ class WhatsappWorker:
         # Vraćamo svježe učitani objekt korisnika iz baze.
         return await service.get_active_identity(sender)
 
-    async def _run_ai_loop(self, sender, text, system_ctx):
-        """AI Petlja: Optimizirana za brzinu."""
+    # [POPRAVAK] Dodan četvrti parametar 'request_context'
+    async def _run_ai_loop(self, sender, text, system_ctx, request_context=None):
+        """AI Petlja: 10/10 Stabilnost - Garantira zatvaranje Tool poziva."""
         
         for _ in range(3): 
             history = await self.context.get_history(sender)
@@ -387,6 +415,7 @@ class WhatsappWorker:
             )
             
             if decision.get("tool"):
+                # 1. Zapiši NAMJERU
                 await self.context.add_message(
                     sender, "assistant", None, 
                     tool_calls=decision["raw_tool_calls"]
@@ -395,12 +424,45 @@ class WhatsappWorker:
                 tool_name = decision["tool"]
                 tool_def = self.registry.tools_map.get(tool_name)
                 
-                if tool_def:
-                    logger.info("Tool exec", tool=tool_name, params=summarize_data(decision["parameters"]))
-                    result = await self.gateway.execute_tool(tool_def, decision["parameters"])
-                else:
-                    result = {"error": "Tool not found"}
-                
+                # --- SAFETY BLOCK START (Ovo fali u tvom kodu) ---
+                result = None
+                try:
+                    if tool_name == "get_my_vehicle_info":
+                        # Custom Tool
+                        logger.info("Executing Custom Tool", tool=tool_name)
+                        async with AsyncSessionLocal() as session:
+                            user_svc = UserService(session, self.gateway)
+                            # Pazi: request_context može biti None ako ga ne proslijediš
+                            guid = request_context.get("user_guid") if request_context else None
+                            if guid:
+                                result = await user_svc._resolve_vehicle_name(guid)
+                            else:
+                                result = "Greška: Korisnik nije identificiran."
+
+                    elif tool_def:
+                        # Swagger Tool
+                        logger.info("Executing Swagger Tool", tool=tool_name)
+                        result = await self.gateway.execute_tool(
+                            tool_def, 
+                            decision["parameters"],
+                            user_context=request_context 
+                        )
+                    else:
+                        result = {"error": f"Tool '{tool_name}' not found."}
+
+                except Exception as tool_err:
+                    # [KLJUČNO] Hvatamo grešku i pretvaramo je u tekst
+                    logger.error("Tool execution failed (caught)", tool=tool_name, error=str(tool_err))
+                    result = f"System Error executing tool: {str(tool_err)}"
+                # --- SAFETY BLOCK END ---
+
+                # 2. Zapiši REZULTAT (Sada sigurno imamo 'result')
+                if not isinstance(result, str):
+                    try:
+                        result = orjson.dumps(result).decode('utf-8')
+                    except:
+                        result = str(result)
+
                 await self.context.add_message(
                     sender, "tool", 
                     result, 

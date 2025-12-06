@@ -16,7 +16,7 @@ settings = get_settings()
 REDIS_TOOL_HASH_PREFIX = "tool:hash:"
 REDIS_TOOL_EMBED_PREFIX = "tool:embed:"
 
-# [NOVO] Vrijeme trajanja cachea: 30 dana (u sekundama)
+# Vrijeme trajanja cachea: 30 dana (u sekundama)
 CACHE_TTL = 60 * 60 * 24 * 30 
 
 class ToolRegistry:
@@ -25,10 +25,29 @@ class ToolRegistry:
         self.client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
         
         self.tools_map: Dict[str, dict] = {}      
-        self.tool_embeddings: List[dict] = []  
+        self.tool_embeddings: List[dict] = []   
         self.is_ready = False 
         self.current_hash = None 
+        
+        # [FIX] Definiramo custom alate
+        self.custom_tools = {
+            "get_my_vehicle_info": {
+                "type": "function",
+                "function": {
+                    "name": "get_my_vehicle_info",
+                    "description": "Dohvaća informacije o vozilu trenutnog korisnika (marka, model, registracija). Koristi ovo OBAVEZNO kad korisnik pita za 'svoj auto', 'registraciju', 'koji auto vozim' ili slično.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {}, 
+                        "required": []
+                    }
+                }
+            }
+        }
+        # Inicijalno punjenje mape s custom alatima
+        self.tools_map.update(self.custom_tools)
 
+        
     def _calculate_tool_hash(self, tool_def: dict) -> str:
         """Kreira jedinstveni otisak alata."""
         json_str = json.dumps(tool_def, sort_keys=True)
@@ -81,8 +100,12 @@ class ToolRegistry:
 
         if spec:
             await self._process_spec(spec)
+            
+            # [FIX] VRAĆAMO CUSTOM ALATE NAKON ŠTO IH JE SWAGGER PREBRISAO
+            self.tools_map.update(self.custom_tools)
+            
             self.is_ready = True
-            logger.info("Tools loaded successfully", count=len(self.tool_embeddings))
+            logger.info("Tools loaded successfully", count=len(self.tool_embeddings), custom_tools=len(self.custom_tools))
 
     async def _process_spec(self, spec: dict):
         new_map = {}
@@ -120,7 +143,7 @@ class ToolRegistry:
                     if cached_embed_str:
                         embedding = json.loads(cached_embed_str)
                         
-                        # [NOVO] Refreshamo TTL (produžujemo život za 30 dana)
+                        # Refreshamo TTL
                         async with self.redis.pipeline() as pipe:
                             pipe.expire(hash_key, CACHE_TTL)
                             pipe.expire(embed_key, CACHE_TTL)
@@ -158,28 +181,38 @@ class ToolRegistry:
         self.tool_embeddings = new_embeddings
 
     async def find_relevant_tools(self, query: str, top_k: int = 3) -> List[Dict]:
-        if not self.is_ready or not self.tool_embeddings: return []
+        """
+        Vraća relevantne alate. 
+        [FIX] UVIJEK uključuje custom alate + pretragu iz vektorske baze.
+        """
+        
+        # [FIX] Startamo s custom alatima (oni su uvijek relevantni)
+        results = list(self.custom_tools.values())
+        
+        if not self.is_ready or not self.tool_embeddings: 
+            return results # Ako swagger nije spreman, vrati bar custom alate
 
         try:
             query_vec = await self._get_embedding(query)
-            if query_vec is None: return []
+            if query_vec is None: return results
 
             vectors = [t["embedding"] for t in self.tool_embeddings]
-            if not vectors: return []
+            if not vectors: return results
             
             # Cosine similarity
             scores = np.dot(vectors, query_vec)
             top_indices = np.argsort(scores)[-top_k:][::-1]
             
-            results = []
             for idx in top_indices:
                 if scores[idx] > 0.25: 
                     results.append(self.tool_embeddings[idx]["def"])
+            
             return results
             
         except Exception as e:
             logger.error("Tool search error", error=str(e))
-            return []
+            # U slučaju greške vektorske pretrage, i dalje vrati custom alate
+            return results
 
     async def _get_embedding(self, text: str) -> Optional[List[float]]:
         try:

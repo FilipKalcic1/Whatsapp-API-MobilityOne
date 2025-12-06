@@ -3,7 +3,7 @@ import structlog
 import asyncio
 import logging
 import redis.asyncio as redis
-from redis.exceptions import LockError  # <--- NOVO: Za Redis Lock
+from redis.exceptions import LockError
 from datetime import timedelta 
 from typing import Dict, Any, Optional
 from tenacity import (
@@ -15,6 +15,7 @@ from tenacity import (
     RetryError 
 )
 from aiobreaker import CircuitBreaker, CircuitBreakerError
+import json
 
 from config import get_settings
 
@@ -32,67 +33,79 @@ class OpenAPIGateway:
         self.limits = httpx.Limits(max_keepalive_connections=20, max_connections=100)
         
         headers = {}
-        if settings.MOBILITY_API_TOKEN:
-            headers["Authorization"] = f"Bearer {settings.MOBILITY_API_TOKEN}"
+        # [POPRAVAK] Sada koristimo KEY umjesto TOKEN, jer se tako zove u config.py
+        if hasattr(settings, "MOBILITY_API_KEY") and settings.MOBILITY_API_KEY:
+            headers["Authorization"] = f"Bearer {settings.MOBILITY_API_KEY}"
 
         self.client = httpx.AsyncClient(timeout=15.0, limits=self.limits, headers=headers)
         
-        # [POPRAVAK] Inicijalizacija Redisa za distribuirano zaključavanje
+        # Inicijalizacija Redisa za distribuirano zaključavanje
         redis_url = getattr(settings, "REDIS_URL", "redis://redis:6379/0")
         self.redis = redis.from_url(redis_url, encoding="utf-8", decode_responses=True)
 
-    async def execute_tool(self, tool_def: Dict[str, Any], params: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute_tool(self, tool_def: dict, params: dict, user_context: dict = None) -> Any:
         """
-        Glavna javna metoda. Priprema parametre i poziva zaštićenu metodu _do_request.
+        Izvršava API poziv, automatski ubacuje sve potrebne headere (Auth i x-tenant)
+        i delegira poziv na _do_request (koji hendla token refresh).
         """
-        path = tool_def['path']
-        method = tool_def['method'].upper()
-        req_data = params.copy()
+        method = tool_def["method"].upper()
+        path = tool_def["path"]
         
-        # Path params injection 
+        # Inicijalizacija spremnika
+        path_params = {}
+        query_params = {}
+        body_params = {}
+        
+        # Razvrstavanje parametara (Path vs Query vs Body)
         for key, value in params.items():
-            placeholder = "{" + key + "}"
-            if placeholder in path:
-                path = path.replace(placeholder, str(value))
-                if key in req_data: del req_data[key]
+            if f"{{{key}}}" in path:
+                path_params[key] = value
+            elif method in ["POST", "PUT", "PATCH"]:
+                body_params[key] = value
+            else:
+                query_params[key] = value
 
-        # Header extraction 
-        headers = {}
-        keys_to_remove = []
-        for key, value in req_data.items():
-            if key.lower().startswith('x-') or key.lower() == 'tenantid':
-                headers[key] = str(value)
-                keys_to_remove.append(key)
+        # Priprema HTTP zaglavlja
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+        }
         
-        for k in keys_to_remove: del req_data[k]
+        # 1. Tenant Injection (CRITICAL)
+        if user_context and user_context.get("tenant_id"):
+            headers["x-tenant"] = user_context["tenant_id"]
 
-        full_url = f"{self.base_url}{path}"
-        
-        request_kwargs = {"headers": headers}
-        if method in ["GET", "DELETE"]:
-            request_kwargs["params"] = req_data
-        else:
-            request_kwargs["json"] = req_data
-
+        # 2. Finalizacija URL-a
         try:
-            return await self._do_request(method, full_url, **request_kwargs)
-
-        except CircuitBreakerError:
-            logger.error("Circuit Breaker OPEN: Skipping external API call.")
-            return {"error": True, "message": "Vanjski servis je privremeno nedostupan (Circuit Open)."}
+            final_url = f"{self.base_url}{path.format(**path_params)}"
+        except KeyError as e:
+            raise Exception(f"AI je zaboravio obavezni path parametar: {str(e)}")
+        
+        try:
+            # DELEGACIJA POZIVA na _do_request za automatski token refresh
+            response_data = await self._do_request(
+                method, 
+                final_url, 
+                params=query_params if query_params else None,
+                json=body_params if body_params else None,
+                headers=headers 
+            )
             
+            # Ako _do_request vrati grešku (nakon 401 i propalog refresh-a)
+            if isinstance(response_data, dict) and response_data.get("error"):
+                 raise Exception(response_data.get("message"))
+
+            # _do_request već vraća parsirani JSON ili status 204
+            return response_data
+
         except httpx.HTTPStatusError as e:
-            logger.error("API Error Response", status=e.response.status_code, error=str(e))
-            return {"error": True, "message": f"Greška vanjskog sustava: {e.response.status_code}"}
-            
-        except (httpx.RequestError, RetryError) as e:
-            logger.error("API Network Failure", error=str(e))
-            return {"error": True, "message": "Nisam uspio kontaktirati sustav (Network Error)."}
-            
+            error_msg = f"API Error {e.response.status_code}: {e.response.text}"
+            logger.error("API Call Failed", url=final_url, error=error_msg)
+            raise Exception(error_msg)
         except Exception as e:
-            logger.error("Unexpected Gateway Error", error=str(e))
-            return {"error": True, "message": "Interna greška sustava."}
-
+            logger.error("System Error during API call", error=str(e))
+            raise e
+            
     @api_breaker
     @retry(     
         stop=stop_after_attempt(3), 
@@ -130,7 +143,10 @@ class OpenAPIGateway:
         if response.status_code == 204:
             return {"status": "success", "data": None}
             
-        return response.json()
+        try:
+            return response.json()
+        except json.JSONDecodeError:
+            return {"response_text": response.text}
 
     async def _secure_refresh_token(self) -> bool:
         """
@@ -164,15 +180,13 @@ class OpenAPIGateway:
 
                 logger.info("Acquired lock. Refreshing token via OAuth2...")
                 
-                # [POPRAVAK] Konstrukcija payload-a prema Damirovom curl primjeru
                 payload = {
                     "client_id": settings.MOBILITY_CLIENT_ID,
                     "client_secret": settings.MOBILITY_CLIENT_SECRET,
                     "grant_type": "client_credentials",
-                    "audience": settings.MOBILITY_AUDIENCE  # <--- OVO JE FALILO
+                    "audience": settings.MOBILITY_AUDIENCE
                 }
                 
-                # Šaljemo scope SAMO ako je definiran i nije prazan string
                 if settings.MOBILITY_SCOPE and settings.MOBILITY_SCOPE.strip():
                     payload["scope"] = settings.MOBILITY_SCOPE
                 
