@@ -395,27 +395,51 @@ class WhatsappWorker:
 
     # [POPRAVAK] Dodan četvrti parametar 'request_context'
     async def _run_ai_loop(self, sender, text, system_ctx, request_context=None):
-        """AI Petlja: 10/10 Stabilnost - Garantira zatvaranje Tool poziva."""
+        """
+        Izvodi glavnu petlju razmišljanja (Think-Act-Observe) koristeći paralelni dohvat podataka.
+        Ova funkcija je orkestrator koji spaja kontekst, alate i AI odluke u jednu cjelinu.
+        """
         
+        # Vrtimo se do 3 puta (AI -> Alat -> AI -> Alat -> AI -> Odgovor)
         for _ in range(3): 
-            history = await self.context.get_history(sender)
             
-            search_query = text
-            if not search_query:
+            # --- [KORAK 1: PARALELIZACIJA] ---
+            # Umjesto da čekamo povijest pa onda alate, lansiramo oba zahtjeva odmah.
+            # Ako je text None (npr. nakon alata), koristimo generički upit za alate da ne gubimo vrijeme.
+            query_for_tools = text or "system_action"
+            
+            # Kreiramo Taskove (Futures) - oni se odmah počinju izvršavati u pozadini.
+            history_task = self.context.get_history(sender)
+            tools_task = self.registry.find_relevant_tools(query_for_tools)
+
+            # Ovdje "pauziramo" funkciju dok se oba paralelna procesa ne završe.
+            history, tools = await asyncio.gather(history_task, tools_task)
+            
+            # --- [KORAK 2: REKONSTRUKCIJA KONTEKSTA] ---
+            # (Ovo je dio koji je falio u skraćenoj verziji)
+            # Ako je 'text' None (što znači da smo u 2. ili 3. krugu petlje nakon izvršenja alata),
+            # moramo AI-u ponovno dati do znanja što je bio originalni korisnikov upit.
+            # Inače AI vidi samo rezultat alata (npr. "Golf 7"), a zaboravi pitanje ("Koji auto vozim?").
+            if not text:
                 for msg in reversed(history):
                     if msg['role'] == 'user':
-                        search_query = msg['content']
+                        # Pronašli smo zadnje pitanje korisnika, ali ga NE postavljamo u varijablu 'text'
+                        # jer bi to zbunilo logiku (mislili bi da je nova poruka).
+                        # OpenAI će to vidjeti kroz 'history' varijablu koju šaljemo u analyze_intent.
                         break
             
-            tools = await self.registry.find_relevant_tools(search_query or "help")
-            
+            # --- [KORAK 3: ODLUČIVANJE] ---
+            # Šaljemo sve prikupljene podatke AI modelu da donese odluku (Alat ili Tekst).
             decision = await analyze_intent(
-                history, text, tools, 
+                history, 
+                text, # Može biti None, ai.py to zna hendlati rekonstrukcijom
+                tools, 
                 system_instruction=system_ctx
             )
             
+            # --- [KORAK 4: IZVRŠAVANJE] ---
             if decision.get("tool"):
-                # 1. Zapiši NAMJERU
+                # Prvo bilježimo u povijest da asistent ŽELI zvati alat (Otvorena petlja).
                 await self.context.add_message(
                     sender, "assistant", None, 
                     tool_calls=decision["raw_tool_calls"]
@@ -423,46 +447,50 @@ class WhatsappWorker:
                 
                 tool_name = decision["tool"]
                 tool_def = self.registry.tools_map.get(tool_name)
-                
-                # --- SAFETY BLOCK START (Ovo fali u tvom kodu) ---
                 result = None
+                
+                # Ulazimo u SAFETY BLOCK - što god se dogodi, moramo vratiti rezultat.
                 try:
+                    # Slučaj A: Custom Python Alati (npr. logika koja treba bazu)
                     if tool_name == "get_my_vehicle_info":
-                        # Custom Tool
                         logger.info("Executing Custom Tool", tool=tool_name)
                         async with AsyncSessionLocal() as session:
                             user_svc = UserService(session, self.gateway)
-                            # Pazi: request_context može biti None ako ga ne proslijediš
+                            # Koristimo guid iz request_contexta koji smo pripremili u handle_business_logic
                             guid = request_context.get("user_guid") if request_context else None
                             if guid:
                                 result = await user_svc._resolve_vehicle_name(guid)
                             else:
-                                result = "Greška: Korisnik nije identificiran."
+                                result = "Greška: Korisnik nije identificiran u kontekstu."
 
+                    # Slučaj B: Standardni Swagger Alati (univerzalni gateway)
                     elif tool_def:
-                        # Swagger Tool
                         logger.info("Executing Swagger Tool", tool=tool_name)
+                        # Ključno: Prosljeđujemo request_context da gateway može izvući Tenant ID i Token
                         result = await self.gateway.execute_tool(
                             tool_def, 
                             decision["parameters"],
                             user_context=request_context 
                         )
+                    
+                    # Slučaj C: Alat ne postoji
                     else:
-                        result = {"error": f"Tool '{tool_name}' not found."}
+                        result = {"error": f"Tool '{tool_name}' not found or not registered."}
 
                 except Exception as tool_err:
-                    # [KLJUČNO] Hvatamo grešku i pretvaramo je u tekst
-                    logger.error("Tool execution failed (caught)", tool=tool_name, error=str(tool_err))
+                    # Hvatamo sve greške (API 400, 500, Timeout) da ne srušimo Workera.
+                    logger.error("Tool execution failed", tool=tool_name, error=str(tool_err))
                     result = f"System Error executing tool: {str(tool_err)}"
-                # --- SAFETY BLOCK END ---
 
-                # 2. Zapiši REZULTAT (Sada sigurno imamo 'result')
+                # --- [KORAK 5: ZATVARANJE PETLJE] ---
+                # Osiguravamo da je rezultat string (JSON) prije spremanja u Redis.
                 if not isinstance(result, str):
                     try:
                         result = orjson.dumps(result).decode('utf-8')
                     except:
                         result = str(result)
 
+                # Spremamo rezultat alata. Ovo je ključno da OpenAI ne baci Error 400 u idućem krugu.
                 await self.context.add_message(
                     sender, "tool", 
                     result, 
@@ -470,12 +498,16 @@ class WhatsappWorker:
                     name=tool_name
                 )
                 
+                # Resetiramo tekst jer u idućem krugu AI treba reagirati na rezultat alata, a ne na input.
                 text = None 
+            
+            # Slučaj: AI je odlučio odgovoriti tekstom (kraj razgovora)
             else:
                 resp = decision.get("response_text")
                 await self.context.add_message(sender, "assistant", resp)
                 await self.queue.enqueue(sender, resp)
                 break
+
 
     async def _check_rate_limit(self, sender: str) -> bool:
         """

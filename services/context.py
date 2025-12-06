@@ -170,7 +170,7 @@ class ContextService:
             # Kratak i jasan prompt za sažimanje
             sys_prompt = "Sažmi ključne informacije: imena, ID-eve, brojeve, status zadnjeg zahtjeva."
             response = await self.client.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model=settings.OPENAI_MODEL,
                 messages=[
                     {"role": "system", "content": sys_prompt},
                     {"role": "user", "content": text_block}
