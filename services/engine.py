@@ -81,7 +81,31 @@ class MessageEngine:
         await self.queue.enqueue(sender, welcome_msg)
         
         return await service.get_active_identity(sender)
+    def compact_json(data: Any) -> Any:
+        """
+        Rekurzivno uklanja prazne vrijednosti.
+        Logika: Prvo očisti djecu. Ako nakon toga ostane prazno, vrati None (da ga roditelj izbaci).
+        """
+        if isinstance(data, dict):
+            cleaned = {}
+            for k, v in data.items():
+                res = compact_json(v)
+                # Zadrži samo ako rezultat nije None/Prazan
+                if res not in [None, "", [], {}, "null", "None"]:
+                    cleaned[k] = res
+            return cleaned if cleaned else None # Vrati None ako je cijeli dict postao prazan
 
+        elif isinstance(data, list):
+            cleaned = []
+            for v in data:
+                res = compact_json(v)
+                if res not in [None, "", [], {}, "null", "None"]:
+                    cleaned.append(res)
+            return cleaned if cleaned else None
+
+        else:
+            return data
+        
     async def run_ai_loop(self, sender, text, system_ctx, request_context=None):
         for _ in range(3): 
             # Paralelno
@@ -113,7 +137,8 @@ class MessageEngine:
                 # Serijalizacija rezultata
                 if not isinstance(result, str):
                     try:
-                        result = orjson.dumps(result).decode()
+                        clean_data = compact_json(result)
+                        result = orjson.dumps(clean_data).decode()
                     except:
                         result = str(result)
 

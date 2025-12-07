@@ -6,7 +6,7 @@ class UserMapping(Base):
     __tablename__ = "user_mappings"
 
     id = Column(Integer, primary_key=True, index=True)
-    
+        
 
     phone_number = Column(String(50), unique=True, nullable=False)
 
@@ -21,3 +21,5 @@ class UserMapping(Base):
     __table_args__ = (
         Index('idx_phone_active', 'phone_number', 'is_active'),
     )
+
+
