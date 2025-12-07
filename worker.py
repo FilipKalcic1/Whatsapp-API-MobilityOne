@@ -21,7 +21,7 @@ from services.context import ContextService
 from services.tool_registry import ToolRegistry
 from services.openapi_bridge import OpenAPIGateway
 from services.user_service import UserService
-from services.ai import analyze_intent
+from services.engine import MessageEngine  # 👈 NOVI IMPORT
 from services.maintenance import MaintenanceService
 import sys 
 
@@ -90,118 +90,123 @@ class WhatsappWorker:
         self.context = None
         self.registry = None
         self.maintenance = None
+        self.engine = None  # 👈 NOVI ENGINE
         self.consecutive_errors = 0 
         self.panic_threshold = 5  
         self.panic_sleep = 30    
         self.default_tenant_id = getattr(settings, "MOBILITY_TENANT_ID", None) 
 
-
     async def start(self):
-            """Inicijalizacija infrastrukture i pokretanje glavne petlje."""
-            logger.info("Worker starting", id=self.worker_id, host=self.hostname)
+        """Inicijalizacija infrastrukture i pokretanje glavne petlje."""
+        logger.info("Worker starting", id=self.worker_id, host=self.hostname)
 
-            # 1. Sentry Monitoring
-            if settings.SENTRY_DSN:
-                sentry_sdk.init(
-                    dsn=settings.SENTRY_DSN,
-                    environment=settings.APP_ENV,
-                    traces_sample_rate=0.1, 
-                )
+        # 1. Sentry Monitoring
+        if settings.SENTRY_DSN:
+            sentry_sdk.init(
+                dsn=settings.SENTRY_DSN,
+                environment=settings.APP_ENV,
+                traces_sample_rate=0.1, 
+            )
+        
+        # 2. Prometheus Metrike
+        try:
+            start_http_server(8001)
+            logger.info("Prometheus metrics server running on port 8001")
+        except Exception as e:
+            logger.warning("Failed to start metrics server", error=str(e))
+        
+        # 3. Infrastruktura (Redis, HTTP, Queue, Context)
+        self.redis = redis.from_url(settings.REDIS_URL, decode_responses=True)
+        self.http = httpx.AsyncClient(timeout=15.0)
+        self.queue = QueueService(self.redis)
+        self.context = ContextService(self.redis)
+        
+        # 4. Inicijalizacija Message Engine-a
+        self.engine = MessageEngine(
+            redis=self.redis,
+            queue=self.queue,
+            context=self.context,
+            default_tenant_id=self.default_tenant_id
+        )
+        
+        # 5. Inicijalizacija API Gateway-a
+        if settings.MOBILITY_API_URL:
+            key_status = "SET" if settings.MOBILITY_API_KEY else "MISSING"
+            logger.info("Gateway Init", url=settings.MOBILITY_API_URL, key_status=key_status)
             
-            # 2. Prometheus Metrike
+            self.gateway = OpenAPIGateway(base_url=settings.MOBILITY_API_URL)
+            self.engine.gateway = self.gateway  # 👈 DODAJEMO GATEWAY U ENGINE
+        else:
+            logger.warning("MOBILITY_API_URL not set. AI tools will fail.")
+
+        # 6. Učitavanje Swaggera
+        self.registry = ToolRegistry(self.redis)
+        self.engine.registry = self.registry  # 👈 DODAJEMO REGISTRY U ENGINE
+        
+        for src in settings.swagger_sources:
             try:
-                start_http_server(8001)
-                logger.info("Prometheus metrics server running on port 8001")
-            except Exception as e:
-                logger.warning("Failed to start metrics server", error=str(e))
-            
-            # 3. Infrastruktura (Redis, HTTP, Queue, Context)
-            self.redis = redis.from_url(settings.REDIS_URL, decode_responses=True)
-            self.http = httpx.AsyncClient(timeout=15.0)
-            self.queue = QueueService(self.redis)
-            self.context = ContextService(self.redis)
-            
-            # 4. Inicijalizacija API Gateway-a
-            if settings.MOBILITY_API_URL:
-                # Provjera ključa (KEY umjesto TOKEN) radi debugiranja
-                key_status = "SET" if settings.MOBILITY_API_KEY else "MISSING"
-                logger.info("Gateway Init", url=settings.MOBILITY_API_URL, key_status=key_status)
+                logger.info(f"Loading swagger source", source=src)
+                await self.registry.load_swagger(src)
                 
-                self.gateway = OpenAPIGateway(base_url=settings.MOBILITY_API_URL)
-            else:
-                logger.warning("MOBILITY_API_URL not set. AI tools will fail.")
+                if src.startswith("http"):
+                    asyncio.create_task(self.registry.start_auto_update(src))
+            except Exception as e:
+                logger.error(f"Failed to load swagger source", source=src, error=str(e))
 
-            # 5. [CLEAN CODE] Učitavanje Swaggera iz centralne konfiguracije
-            self.registry = ToolRegistry(self.redis)
-            
-            # Worker ne mora znati detalje, samo vrti listu koju mu daje config.py
-            for src in settings.swagger_sources:
-                try:
-                    logger.info(f"Loading swagger source", source=src)
-                    await self.registry.load_swagger(src)
-                    
-                    # Auto-update samo za HTTP linkove
-                    if src.startswith("http"):
-                        asyncio.create_task(self.registry.start_auto_update(src))
-                except Exception as e:
-                    logger.error(f"Failed to load swagger source", source=src, error=str(e))
+        # 7. Maintenance Servis
+        self.maintenance = MaintenanceService()
 
-            # 6. Maintenance Servis
-            self.maintenance = MaintenanceService()
+        # 8. Redis Stream Grupa
+        try:
+            await self.redis.xgroup_create(STREAM_INBOUND, "workers_group", id="$", mkstream=True)
+        except redis.ResponseError:
+            pass 
 
-            # 7. Redis Stream Grupa
+        logger.info("Worker ready. Processing loop started.")
+        
+        tick = 0
+        
+        # 9. Glavna Petlja
+        while self.running:
+            await self.redis.setex("worker:heartbeat", 30, "alive")
+            await self.redis.setex(f"worker:heartbeat:{self.hostname}:{self.worker_id}", 30, "alive")
+
             try:
-                await self.redis.xgroup_create(STREAM_INBOUND, "workers_group", id="$", mkstream=True)
-            except redis.ResponseError:
-                pass 
+                tasks = [
+                    self._process_inbound_batch(),
+                    self._process_outbound(),
+                    self._process_retries(),
+                    self.maintenance.run_daily_cleanup()
+                ]
+                
+                if tick % 100 == 0:
+                    tasks.append(self._recover_stalled_messages())
 
-            logger.info("Worker ready. Processing loop started.")
-            
-            tick = 0
-            
-            # 8. Glavna Petlja
-            while self.running:
-                await self.redis.setex("worker:heartbeat", 30, "alive")
-                await self.redis.setex(f"worker:heartbeat:{self.hostname}:{self.worker_id}", 30, "alive")
+                if tick % 300 == 0:
+                    tasks.append(self.queue.auto_heal_dlq())
 
-                try:
-                    tasks = [
-                        self._process_inbound_batch(),
-                        self._process_outbound(),
-                        self._process_retries(),
-                        self.maintenance.run_daily_cleanup()
-                    ]
-                    
-                    # Recovery mehanizmi
-                    if tick % 100 == 0:
-                        tasks.append(self._recover_stalled_messages())
+                await asyncio.gather(*tasks, return_exceptions=True)
+                
+                if self.consecutive_errors > 0:
+                    logger.info("System recovered. Error counter reset.", prev_errors=self.consecutive_errors)
+                    self.consecutive_errors = 0
 
-                    # Auto-heal DLQ
-                    if tick % 300 == 0:
-                        tasks.append(self.queue.auto_heal_dlq())
+                await asyncio.sleep(0.01) 
+                tick += 1
+                
+            except Exception as e:
+                self.consecutive_errors += 1
+                logger.error("Critical Main Loop Error", error=str(e), attempt=self.consecutive_errors)
+                capture_exception(e) 
 
-                    await asyncio.gather(*tasks, return_exceptions=True)
-                    
-                    if self.consecutive_errors > 0:
-                        logger.info("System recovered. Error counter reset.", prev_errors=self.consecutive_errors)
-                        self.consecutive_errors = 0
+                if self.consecutive_errors >= self.panic_threshold:
+                    logger.critical("Fatal error loop. Exiting to allow Docker restart.")
+                    sys.exit(1) 
+                    await asyncio.sleep(self.panic_sleep)
+                else:
+                    await asyncio.sleep(1)
 
-                    await asyncio.sleep(0.01) 
-                    tick += 1
-                    
-                except Exception as e:
-                    self.consecutive_errors += 1
-                    logger.error("Critical Main Loop Error", error=str(e), attempt=self.consecutive_errors)
-                    capture_exception(e) 
-
-                    if self.consecutive_errors >= self.panic_threshold:
-                        logger.critical("Fatal error loop. Exiting to allow Docker restart.")
-                        sys.exit(1) 
-                        await asyncio.sleep(self.panic_sleep)
-                    else:
-                        await asyncio.sleep(1)
-
-            await self.shutdown()
+        await self.shutdown()
 
     async def _process_inbound_batch(self):
         if not self.running: return
@@ -229,9 +234,6 @@ class WhatsappWorker:
             logger.error("Stream read error", error=str(e))
 
     async def _recover_stalled_messages(self):
-        """
-        [ENTERPRISE] Recovery poruka koje su zapele (timeout 5 minuta).
-        """
         if not self.running: return
 
         try:
@@ -264,9 +266,10 @@ class WhatsappWorker:
             text = payload.get('text', '').strip()
             
             if sender and text:
-                if await self._check_rate_limit(sender):
+                # 👈 KORISTIMO ENGINE ZA RATE LIMIT I BUSINESS LOGIC
+                if await self.engine.check_rate_limit(sender):
                     with AI_LATENCY.time():
-                        await self._handle_business_logic(sender, text)
+                        await self.engine.handle_business_logic(sender, text)
                     MSG_PROCESSED.labels(status="success").inc()
                 else:
                     logger.warning("Rate limit exceeded", sender=sender)
@@ -282,246 +285,10 @@ class WhatsappWorker:
             MSG_PROCESSED.labels(status="error").inc()
             capture_exception(e)
             
-            # [ENTERPRISE] Spremanje u DLQ (pametni queue s retry logikom)
             await self.queue.store_inbound_dlq(payload, str(e))
             
             await self.redis.xack(STREAM_INBOUND, "workers_group", msg_id)
             await self.redis.xdel(STREAM_INBOUND, msg_id)
-
-    # --- EMAIL NAČIN --- 
-    # async def _handle_onboarding(self, sender: str, text: str, service: UserService):
-    #     key = f"onboarding:{sender}"
-    #     state = await self.redis.get(key)
-    #     
-    #     if state == "WAITING_EMAIL":
-    #         if "@" not in text or len(text) < 5:
-    #             await self.queue.enqueue(sender, "⚠️ Neispravan format e-maila. Molim pokušajte ponovo.")
-    #             return
-    #
-    #         # Ovdje se prije prosljeđivao email servisu
-    #         result = await service.onboard_user(sender, text)
-    #         
-    #         if result:
-    #             name, vehicle_info = result
-    #             await self.redis.delete(key)
-    #             
-    #             msg = (
-    #                 f"✅ *Identitet potvrđen!*\n"
-    #                 f"👤 {name}\n"
-    #                 f"🚗 {vehicle_info}\n\n"
-    #                 f"Sustav je spreman. Kako vam mogu pomoći?"
-    #             )
-    #             await self.queue.enqueue(sender, msg)
-    #         else:
-    #             await self.queue.enqueue(
-    #                 sender, 
-    #                 f"⛔ E-mail '{text}' nije pronađen. Kontaktirajte administratora."
-    #             )
-    #     else:
-    #         welcome_msg = "👋 Dobrodošli! Molim upišite vašu službenu e-mail adresu."
-    #         await self.queue.enqueue(sender, welcome_msg)
-    #         await self.redis.setex(key, 900, "WAITING_EMAIL")
-
-
-    async def _handle_business_logic(self, sender: str, text: str):
-        async with AsyncSessionLocal() as session:
-            user_service = UserService(session, self.gateway)
-            
-            # 1. Provjera identiteta
-            user = await user_service.get_active_identity(sender)
-            
-            if not user:
-                user = await self._perform_auto_onboard(sender, user_service)
-
-            if not user:
-                return
-
-            # 2. Dohvat informacija o vozilu (za System Prompt)
-            vehicle_info = "Nema dodijeljenog vozila"
-            try:
-                vehicle_info = await user_service._resolve_vehicle_name(user.api_identity)
-            except Exception:
-                pass
-
-            # 3. Kreiranje LOKALNOG konteksta (Request Context)
-            request_context = {
-                "tenant_id": self.default_tenant_id,
-                "user_guid": user.api_identity,
-                "user_name": user.display_name,
-                "phone": sender
-            }
-
-            # 4. [FIX] Priprema System Prompta - Dodana činjenica o broju
-            identity_context = (
-                f"SYSTEM IDENTITY PROTOCOL:\n"
-                f"You are the assistant for '{user.display_name}'. The following are established FACTS about the user:\n"
-                f"FACT: User's Full Name is '{user.display_name}'\n"
-                f"FACT: User's Internal PersonId (GUID) is '{user.api_identity}'\n"
-                f"FACT: User's Phone Number is '{sender}'\n"
-                f"FACT: User's Vehicle Status is '{vehicle_info}'\n"
-                f"FACT: My TenantId is '{self.default_tenant_id}'\n\n"
-                f"CRITICAL RULES:\n"
-                f"1. You MUST answer simple, direct questions about the User's name or identity (e.g., 'What is my name?', 'What is my phone number?') using the FACTS provided above, without calling a tool.\n"
-                f"2. When a tool asks for 'personId', 'driverId' or 'userId', AUTOMATICALLY use the GUID '{user.api_identity}'.\n"
-                f"3. Never ask the user for their ID, you already have it.\n"
-            )
-            
-            await self.context.add_message(sender, "user", text)
-            
-            await self._run_ai_loop(sender, text, identity_context, request_context)
-                
-    async def _perform_auto_onboard(self, sender: str, service: UserService) -> Optional[UserMapping]:
-        """Izdvojena logika onboardinga za čišći glavni flow."""
-        logger.info("Unknown user, attempting auto-onboard", sender=sender)
-        
-        result = await service.try_auto_onboard(sender)
-        
-        # Ako onboarding nije uspio, šaljemo poruku odbijanja i vraćamo None.
-        if not result:
-            logger.warning("Access denied", sender=sender)
-            await self.queue.enqueue(
-                sender, 
-                "⛔ Vaš broj mobitela nije pronađen u sustavu.\nMolimo kontaktirajte administratora flote."
-            )
-            return None
-
-        # Ako je uspio, šaljemo dobrodošlicu.
-        name, vehicle = result
-        welcome_msg = f"👋 Bok {name}! Prepoznao sam tvoj broj.\nTvoje vozilo: {vehicle}\nKako ti mogu pomoći?"
-        await self.queue.enqueue(sender, welcome_msg)
-        
-        # Vraćamo svježe učitani objekt korisnika iz baze.
-        return await service.get_active_identity(sender)
-
-    # [POPRAVAK] Dodan četvrti parametar 'request_context'
-    async def _run_ai_loop(self, sender, text, system_ctx, request_context=None):
-        """
-        Izvodi glavnu petlju razmišljanja (Think-Act-Observe) koristeći paralelni dohvat podataka.
-        Ova funkcija je orkestrator koji spaja kontekst, alate i AI odluke u jednu cjelinu.
-        """
-        
-        # Vrtimo se do 3 puta (AI -> Alat -> AI -> Alat -> AI -> Odgovor)
-        for _ in range(3): 
-            
-            # --- [KORAK 1: PARALELIZACIJA] ---
-            # Umjesto da čekamo povijest pa onda alate, lansiramo oba zahtjeva odmah.
-            # Ako je text None (npr. nakon alata), koristimo generički upit za alate da ne gubimo vrijeme.
-            query_for_tools = text or "system_action"
-            
-            # Kreiramo Taskove (Futures) - oni se odmah počinju izvršavati u pozadini.
-            history_task = self.context.get_history(sender)
-            tools_task = self.registry.find_relevant_tools(query_for_tools)
-
-            # Ovdje "pauziramo" funkciju dok se oba paralelna procesa ne završe.
-            history, tools = await asyncio.gather(history_task, tools_task)
-            
-            # --- [KORAK 2: REKONSTRUKCIJA KONTEKSTA] ---
-            # (Ovo je dio koji je falio u skraćenoj verziji)
-            # Ako je 'text' None (što znači da smo u 2. ili 3. krugu petlje nakon izvršenja alata),
-            # moramo AI-u ponovno dati do znanja što je bio originalni korisnikov upit.
-            # Inače AI vidi samo rezultat alata (npr. "Golf 7"), a zaboravi pitanje ("Koji auto vozim?").
-            if not text:
-                for msg in reversed(history):
-                    if msg['role'] == 'user':
-                        # Pronašli smo zadnje pitanje korisnika, ali ga NE postavljamo u varijablu 'text'
-                        # jer bi to zbunilo logiku (mislili bi da je nova poruka).
-                        # OpenAI će to vidjeti kroz 'history' varijablu koju šaljemo u analyze_intent.
-                        break
-            
-            # --- [KORAK 3: ODLUČIVANJE] ---
-            # Šaljemo sve prikupljene podatke AI modelu da donese odluku (Alat ili Tekst).
-            decision = await analyze_intent(
-                history, 
-                text, # Može biti None, ai.py to zna hendlati rekonstrukcijom
-                tools, 
-                system_instruction=system_ctx
-            )
-            
-            # --- [KORAK 4: IZVRŠAVANJE] ---
-            if decision.get("tool"):
-                # Prvo bilježimo u povijest da asistent ŽELI zvati alat (Otvorena petlja).
-                await self.context.add_message(
-                    sender, "assistant", None, 
-                    tool_calls=decision["raw_tool_calls"]
-                )
-                
-                tool_name = decision["tool"]
-                tool_def = self.registry.tools_map.get(tool_name)
-                result = None
-                
-                # Ulazimo u SAFETY BLOCK - što god se dogodi, moramo vratiti rezultat.
-                try:
-                    # Slučaj A: Custom Python Alati (npr. logika koja treba bazu)
-                    if tool_name == "get_my_vehicle_info":
-                        logger.info("Executing Custom Tool", tool=tool_name)
-                        async with AsyncSessionLocal() as session:
-                            user_svc = UserService(session, self.gateway)
-                            # Koristimo guid iz request_contexta koji smo pripremili u handle_business_logic
-                            guid = request_context.get("user_guid") if request_context else None
-                            if guid:
-                                result = await user_svc._resolve_vehicle_name(guid)
-                            else:
-                                result = "Greška: Korisnik nije identificiran u kontekstu."
-
-                    # Slučaj B: Standardni Swagger Alati (univerzalni gateway)
-                    elif tool_def:
-                        logger.info("Executing Swagger Tool", tool=tool_name)
-                        # Ključno: Prosljeđujemo request_context da gateway može izvući Tenant ID i Token
-                        result = await self.gateway.execute_tool(
-                            tool_def, 
-                            decision["parameters"],
-                            user_context=request_context 
-                        )
-                    
-                    # Slučaj C: Alat ne postoji
-                    else:
-                        result = {"error": f"Tool '{tool_name}' not found or not registered."}
-
-                except Exception as tool_err:
-                    # Hvatamo sve greške (API 400, 500, Timeout) da ne srušimo Workera.
-                    logger.error("Tool execution failed", tool=tool_name, error=str(tool_err))
-                    result = f"System Error executing tool: {str(tool_err)}"
-
-                # --- [KORAK 5: ZATVARANJE PETLJE] ---
-                # Osiguravamo da je rezultat string (JSON) prije spremanja u Redis.
-                if not isinstance(result, str):
-                    try:
-                        result = orjson.dumps(result).decode('utf-8')
-                    except:
-                        result = str(result)
-
-                # Spremamo rezultat alata. Ovo je ključno da OpenAI ne baci Error 400 u idućem krugu.
-                await self.context.add_message(
-                    sender, "tool", 
-                    result, 
-                    tool_call_id=decision["tool_call_id"],
-                    name=tool_name
-                )
-                
-                # Resetiramo tekst jer u idućem krugu AI treba reagirati na rezultat alata, a ne na input.
-                text = None 
-            
-            # Slučaj: AI je odlučio odgovoriti tekstom (kraj razgovora)
-            else:
-                resp = decision.get("response_text")
-                await self.context.add_message(sender, "assistant", resp)
-                await self.queue.enqueue(sender, resp)
-                break
-
-
-    async def _check_rate_limit(self, sender: str) -> bool:
-        """
-        [MODIFIED] Provjera rate limita koristeći atomski Redis Pipeline.
-        """
-        key = f"rate:{sender}"
-        
-        async with self.redis.pipeline() as pipe:
-            pipe.incr(key)
-            pipe.expire(key, 60)
-            results = await pipe.execute()
-            
-        count = results[0]
-        return count <= 20
 
     async def _process_outbound(self):
         if not self.running: return
@@ -584,7 +351,7 @@ class WhatsappWorker:
     async def shutdown(self):
         logger.info("Worker shutting down...")
         self.running = False
-        await asyncio.sleep(15)  # [FAZA 1] Dajemo vremena za graceful shutdown
+        await asyncio.sleep(15)
         
         if self.http: await self.http.aclose()
         if self.gateway: await self.gateway.close()
@@ -599,7 +366,6 @@ async def main():
     await worker.start()
 
 if __name__ == "__main__":
-
     try:    
         asyncio.run(main())
     except KeyboardInterrupt:

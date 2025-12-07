@@ -16,7 +16,7 @@ settings = get_settings()
 REDIS_TOOL_HASH_PREFIX = "tool:hash:"
 REDIS_TOOL_EMBED_PREFIX = "tool:embed:"
 
-# Vrijeme trajanja cachea: 30 dana (u sekundama)
+# Vrijeme trajanja cachea: 30 dana
 CACHE_TTL = 60 * 60 * 24 * 30 
 
 class ToolRegistry:
@@ -29,221 +29,110 @@ class ToolRegistry:
         self.is_ready = False 
         self.current_hash = None 
         
-        # [FIX] Definiramo custom alate
-        self.custom_tools = {
-            "get_my_vehicle_info": {
-                "type": "function",
-                "function": {
-                    "name": "get_my_vehicle_info",
-                    "description": "Dohvaća informacije o vozilu trenutnog korisnika (marka, model, registracija). Koristi ovo OBAVEZNO kad korisnik pita za 'svoj auto', 'registraciju', 'koji auto vozim' ili slično.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {}, 
-                        "required": []
-                    }
-                }
-            }
-        }
-        # Inicijalno punjenje mape s custom alatima
-        self.tools_map.update(self.custom_tools)
-
-        
-    def _calculate_tool_hash(self, tool_def: dict) -> str:
-        """Kreira jedinstveni otisak alata."""
-        json_str = json.dumps(tool_def, sort_keys=True)
-        return hashlib.sha256(json_str.encode("utf-8")).hexdigest()
-
-    async def start_auto_update(self, source_url: str, interval: int = 300):
-        if not source_url.startswith("http"): return
-
-        logger.info("Auto-update watchdog started", source=source_url)
-        while True:
-            await asyncio.sleep(interval)
-            try:
-                async with httpx.AsyncClient() as client:
-                    try:
-                        response = await client.head(source_url)
-                        if response.status_code >= 400:
-                            raise httpx.RequestError("HEAD not supported")
-                    except httpx.RequestError:
-                        response = await client.get(source_url)
-                    
-                    remote_hash = response.headers.get("ETag") or response.headers.get("Last-Modified")
-                    
-                    # Osvježi ako se promijenilo ILI ako je prošlo puno vremena (da refreshamo TTL)
-                    if (remote_hash and remote_hash != self.current_hash) or (interval > 3600):
-                        logger.info("Checking/Reloading Swagger...", remote_hash=remote_hash)
-                        await self.load_swagger(source_url)
-                        self.current_hash = remote_hash
-            except Exception as e:
-                logger.warning("Auto-update check failed", error=str(e))
-
-    async def load_swagger(self, source: str):
-        logger.info("Loading tools definition...", source=source)
-        spec = None
-
+    async def load_swagger(self, url_or_path: str):
+        """Učitava Swagger/OpenAPI definiciju i pretvara je u OpenAI alate."""
         try:
-            if source.startswith("http"):
+            content = ""
+            if url_or_path.startswith("http"):
                 async with httpx.AsyncClient() as client:
-                    resp = await client.get(source, timeout=10.0)
+                    resp = await client.get(url_or_path, timeout=10)
                     resp.raise_for_status()
-                    spec = resp.json()
-                    self.current_hash = resp.headers.get("ETag")
+                    content = resp.text
             else:
-                with open(source, 'r', encoding='utf-8') as f:
-                    spec = json.load(f)
-        except Exception as e:
-            logger.error("Failed to load Swagger", source=source, error=str(e))
-            if not self.is_ready: 
-                logger.critical("Starting without tools due to swagger error!")
-            return
+                with open(url_or_path, "r", encoding="utf-8") as f:
+                    content = f.read()
 
-        if spec:
-            await self._process_spec(spec)
+            spec = json.loads(content)
+            count = 0
             
-            # [FIX] VRAĆAMO CUSTOM ALATE NAKON ŠTO IH JE SWAGGER PREBRISAO
-            self.tools_map.update(self.custom_tools)
-            
-            self.is_ready = True
-            logger.info("Tools loaded successfully", count=len(self.tool_embeddings), custom_tools=len(self.custom_tools))
-
-    async def _process_spec(self, spec: dict):
-        new_map = {}
-        new_embeddings = []
-
-        paths = spec.get('paths', {})
-        for path, methods in paths.items():
-            for method, details in methods.items():
-                if method.lower() not in ['get', 'post', 'put', 'delete']: continue
-                
-                op_id = details.get('operationId')
-                if not op_id:
-                    clean_path = path.replace("{", "").replace("}", "").replace("/", "_").strip("_")
-                    op_id = f"{method.lower()}_{clean_path}"
-                    details['operationId'] = op_id
-
-                desc = f"{details.get('summary', '')} {details.get('description', '')}"
-                if not desc.strip():
-                    desc = f"{method.upper()} {path}" 
-                
-                openai_schema = self._to_openai_schema(op_id, desc, details)
-                
-                # --- REDIS CACHE LOGIKA ---
-                tool_hash = self._calculate_tool_hash(openai_schema)
-                embedding = None
-                
-                hash_key = f"{REDIS_TOOL_HASH_PREFIX}{op_id}"
-                embed_key = f"{REDIS_TOOL_EMBED_PREFIX}{op_id}"
-                
-                cached_hash = await self.redis.get(hash_key)
-                
-                if cached_hash == tool_hash:
-                    # HIT! Imamo embedding.
-                    cached_embed_str = await self.redis.get(embed_key)
-                    if cached_embed_str:
-                        embedding = json.loads(cached_embed_str)
+            for path, methods in spec.get("paths", {}).items():
+                for method, details in methods.items():
+                    if method not in ["get", "post", "put", "delete"]:
+                        continue
+                    
+                    op_id = details.get("operationId")
+                    if not op_id:
+                        continue
                         
-                        # Refreshamo TTL
-                        async with self.redis.pipeline() as pipe:
-                            pipe.expire(hash_key, CACHE_TTL)
-                            pipe.expire(embed_key, CACHE_TTL)
-                            await pipe.execute()
-                
-                # Ako nema (MISS), zovi OpenAI
-                if not embedding:
-                    if cached_hash:
-                        logger.info("Tool changed, re-calculating", tool=op_id)
-                        
-                    embedding = await self._get_embedding(f"{op_id}: {desc}")
-                    if embedding:
-                        # Spremi s TTL-om
-                        async with self.redis.pipeline() as pipe:
-                            pipe.set(hash_key, tool_hash, ex=CACHE_TTL)
-                            pipe.set(embed_key, json.dumps(embedding), ex=CACHE_TTL)
-                            await pipe.execute()
-                        
-                        await asyncio.sleep(0.05) 
-
-                if embedding:
-                    new_map[op_id] = {
+                    # Filtriramo samo sigurne metode ili one koje želimo
+                    # Ovdje učitavamo SVE, a AI odlučuje što zvati
+                    
+                    tool_desc = details.get("summary") or details.get("description") or op_id
+                    openai_tool = self._to_openai_schema(op_id, tool_desc, details)
+                    
+                    # Spremanje u mapu za brzo izvršavanje
+                    self.tools_map[op_id] = {
+                        "def": openai_tool,
                         "path": path,
-                        "method": method,
-                        "openai_schema": openai_schema
+                        "method": method.upper(),
+                        "server": spec.get("servers", [{"url": ""}])[0].get("url", "")
                     }
-                    new_embeddings.append({
-                        "id": op_id,
-                        "embedding": embedding,
-                        "def": openai_schema, 
-                        "hash": tool_hash
-                    })
-
-        self.tools_map = new_map
-        self.tool_embeddings = new_embeddings
-
-    async def find_relevant_tools(self, query: str, top_k: int = 3) -> List[Dict]:
-        """
-        Vraća relevantne alate. 
-        [FIX] UVIJEK uključuje custom alate + pretragu iz vektorske baze.
-        """
-        
-        # [FIX] Startamo s custom alatima (oni su uvijek relevantni)
-        results = list(self.custom_tools.values())
-        
-        if not self.is_ready or not self.tool_embeddings: 
-            return results # Ako swagger nije spreman, vrati bar custom alate
-
-        try:
-            query_vec = await self._get_embedding(query)
-            if query_vec is None: return results
-
-            vectors = [t["embedding"] for t in self.tool_embeddings]
-            if not vectors: return results
+                    count += 1
             
-            # Cosine similarity
-            scores = np.dot(vectors, query_vec)
-            top_indices = np.argsort(scores)[-top_k:][::-1]
-            
-            for idx in top_indices:
-                if scores[idx] > 0.25: 
-                    results.append(self.tool_embeddings[idx]["def"])
-            
-            return results
+            logger.info("Swagger loaded", source=url_or_path, tools_count=count)
+            # Nakon učitavanja, osvježi embeddinge
+            await self._refresh_embeddings()
             
         except Exception as e:
-            logger.error("Tool search error", error=str(e))
-            # U slučaju greške vektorske pretrage, i dalje vrati custom alate
-            return results
-
-    async def _get_embedding(self, text: str) -> Optional[List[float]]:
-        try:
-            text = text.replace("\n", " ")
-            resp = await self.client.embeddings.create(
-                input=[text], 
-                model="text-embedding-3-small"
-            )
-            return resp.data[0].embedding
-        except Exception as e:
-            logger.error("Embedding generation failed", error=str(e))
-            return None
+            logger.error("Failed to load swagger", source=url_or_path, error=str(e))
 
     def _to_openai_schema(self, name, desc, details):
+        """
+        Pretvara Swagger operaciju u OpenAI Function Schema.
+        Sadrži 'Auto-Fix' logiku za neispravne Swaggere (poput array missing items).
+        """
         params = {"type": "object", "properties": {}, "required": []}
+        
+        # 1. Obrada Query/Path parametara
         for p in details.get("parameters", []):
             p_name = p.get("name")
-            p_type = p.get("schema", {}).get("type", "string")
-            params["properties"][p_name] = {"type": p_type, "description": p.get("description", "")}
-            if p.get("required"): params["required"].append(p_name)
+            p_schema = p.get("schema", {})
+            p_type = p_schema.get("type", "string")
+            p_desc = p.get("description", "") or p_name
 
+            prop_def = {
+                "type": p_type, 
+                "description": p_desc
+            }
+
+            # [FIX] OpenAI Crash Prevention: Array mora imati 'items'
+            if p_type == "array":
+                if "items" in p_schema:
+                    # Kopiramo postojeći items definition
+                    prop_def["items"] = p_schema["items"]
+                else:
+                    # Fallback: Ako fali, pretpostavljamo array of strings
+                    prop_def["items"] = {"type": "string"}
+
+            params["properties"][p_name] = prop_def
+            
+            if p.get("required"): 
+                params["required"].append(p_name)
+
+        # 2. Obrada Request Body-a (za POST/PUT)
         if "requestBody" in details:
             content = details["requestBody"].get("content", {})
+            # Tražimo JSON ili Form data
             schema = content.get("application/json", {}).get("schema", {}) or \
                      content.get("application/x-www-form-urlencoded", {}).get("schema", {})
             
             for p_name, p_schema in schema.get("properties", {}).items():
-                params["properties"][p_name] = {
-                    "type": p_schema.get("type", "string"),
-                    "description": p_schema.get("description", "")
+                p_type = p_schema.get("type", "string")
+                
+                prop_def = {
+                    "type": p_type,
+                    "description": p_schema.get("description", "") or p_name
                 }
+
+                # [FIX] OpenAI Crash Prevention za Body
+                if p_type == "array":
+                    if "items" in p_schema:
+                        prop_def["items"] = p_schema["items"]
+                    else:
+                        prop_def["items"] = {"type": "string"}
+
+                params["properties"][p_name] = prop_def
+                
                 if p_name in schema.get("required", []):
                     params["required"].append(p_name)
 
@@ -251,7 +140,85 @@ class ToolRegistry:
             "type": "function",
             "function": {
                 "name": name,
-                "description": desc[:1000], 
+                "description": desc[:1024], # OpenAI limit
                 "parameters": params
             }
         }
+
+    async def _refresh_embeddings(self):
+        """Generira embeddinge samo za nove/promijenjene alate."""
+        new_embeddings = []
+        
+        for name, tool_data in self.tools_map.items():
+            tool_def = tool_data["def"]
+            # Kreiramo hash alata da vidimo je li se promijenio
+            tool_json = json.dumps(tool_def, sort_keys=True)
+            tool_hash = hashlib.md5(tool_json.encode()).hexdigest()
+            
+            cached_hash = await self.redis.get(f"{REDIS_TOOL_HASH_PREFIX}{name}")
+            
+            if cached_hash == tool_hash:
+                # Nije se promijenio, učitaj embedding iz cachea
+                cached_embed = await self.redis.get(f"{REDIS_TOOL_EMBED_PREFIX}{name}")
+                if cached_embed:
+                    new_embeddings.append({
+                        "tool": tool_def,
+                        "embedding": json.loads(cached_embed)
+                    })
+                    continue
+            
+            # Promijenio se ili je nov -> Generiraj Embedding
+            desc = tool_def["function"]["description"]
+            # Embedding radimo na temelju Imena i Opisa
+            embedding = await self._generate_embedding(f"{name}: {desc}")
+            
+            if embedding:
+                # Spremi u Redis
+                await self.redis.set(f"{REDIS_TOOL_HASH_PREFIX}{name}", tool_hash, ex=CACHE_TTL)
+                await self.redis.set(f"{REDIS_TOOL_EMBED_PREFIX}{name}", json.dumps(embedding), ex=CACHE_TTL)
+                
+                new_embeddings.append({
+                    "tool": tool_def,
+                    "embedding": embedding
+                })
+        
+        self.tool_embeddings = new_embeddings
+        self.is_ready = True
+        logger.info("Tool Registry refreshed", total_tools=len(self.tools_map))
+
+    async def _generate_embedding(self, text: str) -> List[float]:
+        try:
+            resp = await self.client.embeddings.create(
+                input=text,
+                model="text-embedding-3-small"
+            )
+            return resp.data[0].embedding
+        except Exception as e:
+            logger.error("Embedding generation failed", error=str(e))
+            return None
+
+    async def find_relevant_tools(self, query: str, top_k: int = 5) -> List[dict]:
+        """Semantička pretraga alata."""
+        if not self.is_ready or not self.tool_embeddings:
+            # Fallback ako nismo spremni
+            return [t["def"] for t in list(self.tools_map.values())[:top_k]]
+            
+        query_embedding = await self._generate_embedding(query)
+        if not query_embedding:
+            return []
+
+        # Računanje kosinusne sličnosti
+        scores = []
+        for item in self.tool_embeddings:
+            similarity = np.dot(query_embedding, item["embedding"])
+            scores.append((similarity, item["tool"]))
+            
+        # Sortiranje i vraćanje najboljih
+        scores.sort(key=lambda x: x[0], reverse=True)
+        return [s[1] for s in scores[:top_k]]
+
+    async def start_auto_update(self, url: str):
+        """Periodički osvježava Swagger (npr. svakih sat vremena)."""
+        while True:
+            await asyncio.sleep(3600)
+            await self.load_swagger(url)

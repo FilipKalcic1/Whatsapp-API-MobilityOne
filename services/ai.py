@@ -9,23 +9,38 @@ settings = get_settings()
 logger = structlog.get_logger("ai")
 client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
-# [CRITICAL] Originalni Prompt s pravilima sigurnosti
+
 SYSTEM_PROMPT = """
-Ti si odgovoran i oprezan AI asistent za upravljanje voznim parkom (MobilityOne).
-Tvoj cilj je točno izvršavati zadatke koristeći dostupne alate.
+Ti si MobilityOne AI asistent. Tvoj posao je upravljanje voznim parkom, ali tvoj stil komunikacije mora biti prirodan i profesionalan.
+Tvoje znanje dolazi iz dva izvora:
+1. KEYRING (FACTS): Podaci o korisniku i vozilu.
+2. ALATI (TOOLS): Funkcije koje možeš pozvati.
 
-### PRAVILA SIGURNOSTI (CRITICAL):
-1. **SAFE AKCIJE (GET/READ):** - Ako korisnik traži informaciju (npr. "Gdje je vozilo?", "Stanje računa"), ODMAH pozovi alat. 
-   - Nemoj tražiti potvrdu za čitanje podataka.
+### 1. PROTOKOL PARAMETARA (ZERO-HALLUCINATION):
+- Koristi KEYRING za popunjavanje parametara alata.
+- Ako alat traži 'costCenterId', PRONAĐI 'Org.CostCenterId' u KEYRING listi.
+- Ako alat traži 'vehicleId', PRONAĐI 'Vehicle.Id' u KEYRING listi.
+- Ako je vrijednost u KEYRING-u 'UNKNOWN', NE SMIJEŠ izmisliti ID. Pitaj korisnika.
 
-2. **DANGEROUS AKCIJE (POST/DELETE/UPDATE):** - Ako korisnik želi nešto promijeniti:
-   - **NIKADA** ne pozivaj alat odmah!
-   - **PRVO** objasni što ćeš učiniti i traži "DA".
-   - **TEK NAKON** potvrde pozovi alat.
+### 2. PROTOKOL IZVRŠAVANJA:
+- **READ (GET):** Ako je informacija u KEYRING-u, odgovori odmah. Ako nije, zovi alat.
+- **WRITE (POST/PUT):** Uvijek objasni što ćeš napraviti i traži potvrdu ("DA") prije poziva.
 
-### UPUTE:
-- Budi kratak, profesionalan i direktan.
-- Ako alat vrati grešku, prenesi je korisniku.
+### 3. PROTOKOL RAZGOVORA (HUMAN TOUCH - CRITICAL):
+- **ZABRANJENO PONAVLJANJE:** Ako smo usred razgovora, NEMOJ započinjati poruku s "Dobar dan" ili "Pozdrav".
+- **PRIRODNI TIJEK:** Nakon što izvršiš zadatak, nemoj reći "Kako vam mogu pomoći?". Umjesto toga reci: "Riješeno." ili "Evo podataka." ili "Imate li još pitanja?".
+- **KONTEKST:** Pamti što smo upravo pričali. Ako korisnik kaže "Hvala", reci "Nema na čemu".
+- **GREŠKE:** Ako ne znaš odgovor, reci to ljudski: "Žao mi je, ali nemam taj podatak u sustavu", a ne robotski.
+
+### 4. INTEGRITET PODATAKA (DATA FIDELITY - STRICT):
+- **ZABRANA KONVERZIJE:** Prikazuj brojeve i valute TOČNO onako kako ih vidiš u podacima.
+- Ako piše "200.0", a znaš da je riječ o novcu reci "200.0 EUR". **NIKADA** ne preračunavaj u kune (HRK) ili druge valute samoinicijativno.
+- **BEZ ZAOKRUŽIVANJA:** Ne zaokružuj i ne mijenjaj iznose osim ako korisnik to izričito ne traži.
+- **IZVORNOST:** Vjeruj JSON-u/Keyringu. Nemoj pretpostavljati tečajne liste ili mjerne jedinice koje ne pišu.
+
+Budi kratak, precizan, ali ljubazan.
+
+AKO NEMAŠ INFORMACIJU NEMOJ LAGATI/IZMIŠLJATI SVOJE PODATKE VEĆ SLIJEDI UPUTE. 
 """
 
 async def analyze_intent(
@@ -88,42 +103,36 @@ async def analyze_intent(
 # services/ai.py
 
 def _construct_messages(history: list, text: str, instruction: str | None) -> list:
-    """
-    [FINAL FIX] Eksplicitno definira polja za svaku ulogu radi striktne API validacije.
-    """
+    # 1. System Prompt
     msgs = [{"role": "system", "content": SYSTEM_PROMPT}]
-    
     if instruction:
         msgs.append({"role": "system", "content": instruction})
     
-    for h in history:
-        role = h.get("role")
-        if not role: continue 
-
-        valid_msg = {"role": role}
-
-        if role == "assistant":
-            if h.get("tool_calls"):
-                # Pomoćnik poziva alat: Content MORA biti None
-                valid_msg["content"] = None 
-                valid_msg["tool_calls"] = h["tool_calls"]
+    # 2. Sanitizacija povijesti (Uklanjanje slomljenih tool poziva)
+    clean_history = []
+    i = 0
+    while i < len(history):
+        msg = history[i]
+        role = msg.get("role")
+        
+        if role == "assistant" and msg.get("tool_calls"):
+            # Provjera para: Ima li Assistant svog Tool-a?
+            is_paired = False
+            if i + 1 < len(history) and history[i+1].get("role") == "tool":
+                is_paired = True
+            
+            if is_paired:
+                clean_history.append({"role": "assistant", "content": None, "tool_calls": msg["tool_calls"]})
             else:
-                valid_msg["content"] = h.get("content")
-        
+                pass # BRISANJE ZOMBIJA
+
         elif role == "tool":
-            # Ako fali ID poziva, ovo je korumpirana poruka (zombi) - preskoči je!
-            if not h.get("tool_call_id") or not h.get("name"):
-                 continue 
-            
-            valid_msg["tool_call_id"] = h["tool_call_id"]
-            valid_msg["name"] = h["name"]
-            valid_msg["content"] = h.get("content") 
-            
+            if msg.get("tool_call_id"): # Samo validni tool odgovori
+                 clean_history.append(msg)
         else:
-            valid_msg["content"] = h.get("content")
-            
-        msgs.append(valid_msg)
-        
+            clean_history.append({"role": role, "content": msg.get("content")})
+        i += 1
+
     if text:
         msgs.append({"role": "user", "content": text})
         
