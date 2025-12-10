@@ -23,7 +23,9 @@ from services.openapi_bridge import OpenAPIGateway
 from services.user_service import UserService
 from services.engine import MessageEngine  # 👈 NOVI IMPORT
 from services.maintenance import MaintenanceService
-import sys 
+from services.cache import CacheService
+import sys  
+
 
 settings = get_settings()
 configure_logger()
@@ -82,7 +84,7 @@ class WhatsappWorker:
         self.worker_id = str(uuid.uuid4())[:8]
         self.hostname = socket.gethostname()
         self.running = True
-        
+        self.cache = None
         self.redis = None
         self.gateway = None
         self.http = None
@@ -120,13 +122,15 @@ class WhatsappWorker:
         self.http = httpx.AsyncClient(timeout=15.0)
         self.queue = QueueService(self.redis)
         self.context = ContextService(self.redis)
-        
+        self.cache = CacheService(self.redis)
+
         # 4. Inicijalizacija Message Engine-a
         self.engine = MessageEngine(
             redis=self.redis,
             queue=self.queue,
             context=self.context,
-            default_tenant_id=self.default_tenant_id
+            default_tenant_id=self.default_tenant_id,
+            cache=self.cache
         )
         
         # 5. Inicijalizacija API Gateway-a

@@ -43,13 +43,18 @@ class OperationalContext(BaseModel):
         lines.append(f"- User.PersonId: {self.user.person_id}")
         lines.append(f"- User.DisplayName: {self.user.display_name}")
         lines.append(f"- User.Phone: {self.user.phone}")
-        # Vehicle
+        
+        # Vehicle - [POPRAVAK] Dodano ime vozila!
         lines.append(f"- Vehicle.Id: {self.vehicle.id}")
+        lines.append(f"- Vehicle.Name: {self.vehicle.name}")  # <--- OVO JE FALILO
         lines.append(f"- Vehicle.Plate: {self.vehicle.plate}")
         lines.append(f"- Vehicle.RegExpiry: {self.vehicle.reg_expiry}")
+        
         # Org
         lines.append(f"- Org.CostCenterId: {self.org.cost_center_id}")
+        
         # Finance
         lines.append(f"- Contract.MonthlyAmount: {self.contract.monthly_amount}")
+        lines.append(f"- Contract.LeasingProvider: {self.contract.leasing_provider}") # Dodao sam i ovo da zna tko je leasing
         
         return "\n".join(lines)

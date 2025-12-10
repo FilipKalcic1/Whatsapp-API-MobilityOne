@@ -33,15 +33,3 @@ def configure_logger():
     # Preusmjeri standardni Python logging na structlog
     logging.basicConfig(format="%(message)s", stream=sys.stdout, level=logging.INFO)
 
-
-    logging.getLogger("httpx").setLevel(logging.WARNING)
-    logging.getLogger("httpcore").setLevel(logging.WARNING)
-    
-    # Urllib3 je često ispod haube drugih libova
-    logging.getLogger("urllib3").setLevel(logging.WARNING)
-    
-    # Asyncio može spammati debug poruke
-    logging.getLogger("asyncio").setLevel(logging.WARNING)
-    
-    # Povezani Azure/OpenAI loggeri (za svaki slučaj)
-    logging.getLogger("openai").setLevel(logging.WARNING)

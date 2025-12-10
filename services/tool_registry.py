@@ -1,224 +1,210 @@
 import asyncio
 import json
-import hashlib
 import httpx
 import structlog
-import numpy as np
 import redis.asyncio as redis
+import re  # <--- NOVI IMPORT ZA REGEX
 from typing import List, Dict, Any, Optional
-from openai import AsyncOpenAI
+from openai import AsyncAzureOpenAI
 from config import get_settings
 
 logger = structlog.get_logger("tool_registry")
 settings = get_settings()
 
-# Prefiksi ključeva u Redisu
-REDIS_TOOL_HASH_PREFIX = "tool:hash:"
-REDIS_TOOL_EMBED_PREFIX = "tool:embed:"
-
-# Vrijeme trajanja cachea: 30 dana
-CACHE_TTL = 60 * 60 * 24 * 30 
-
 class ToolRegistry:
     def __init__(self, redis_client: redis.Redis):
         self.redis = redis_client
-        self.client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+        
+        self.client = AsyncAzureOpenAI(
+            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+            api_key=settings.AZURE_OPENAI_API_KEY,
+            api_version=settings.AZURE_OPENAI_API_VERSION
+        )   
         
         self.tools_map: Dict[str, dict] = {}      
-        self.tool_embeddings: List[dict] = []   
         self.is_ready = False 
-        self.current_hash = None 
         
-    async def load_swagger(self, url_or_path: str):
-        """Učitava Swagger/OpenAPI definiciju i pretvara je u OpenAI alate."""
-        try:
-            content = ""
-            if url_or_path.startswith("http"):
-                async with httpx.AsyncClient() as client:
-                    resp = await client.get(url_or_path, timeout=10)
-                    resp.raise_for_status()
-                    content = resp.text
-            else:
-                with open(url_or_path, "r", encoding="utf-8") as f:
-                    content = f.read()
-
-            spec = json.loads(content)
-            count = 0
-            
-            for path, methods in spec.get("paths", {}).items():
-                for method, details in methods.items():
-                    if method not in ["get", "post", "put", "delete"]:
-                        continue
-                    
-                    op_id = details.get("operationId")
-                    if not op_id:
-                        continue
-                        
-                    # Filtriramo samo sigurne metode ili one koje želimo
-                    # Ovdje učitavamo SVE, a AI odlučuje što zvati
-                    
-                    tool_desc = details.get("summary") or details.get("description") or op_id
-                    openai_tool = self._to_openai_schema(op_id, tool_desc, details)
-                    
-                    # Spremanje u mapu za brzo izvršavanje
-                    self.tools_map[op_id] = {
-                        "def": openai_tool,
-                        "path": path,
-                        "method": method.upper(),
-                        "server": spec.get("servers", [{"url": ""}])[0].get("url", "")
+        self.custom_tools = {
+            "get_my_vehicle_info": {
+                "type": "function",
+                "function": {
+                    "name": "get_my_vehicle_info",
+                    "description": "Dohvaća informacije o vozilu trenutnog korisnika.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {}, 
+                        "required": []
                     }
-                    count += 1
-            
-            logger.info("Swagger loaded", source=url_or_path, tools_count=count)
-            # Nakon učitavanja, osvježi embeddinge
-            await self._refresh_embeddings()
-            
+                }
+            }
+        }
+        self.tools_map.update(self.custom_tools)
+
+    async def start_auto_update(self, source_url: str, interval: int = 3600):
+        if not source_url.startswith("http"): return
+        logger.info("Auto-update watchdog started", source=source_url)
+        
+        try:
+            await self.load_swagger(source_url)
         except Exception as e:
-            logger.error("Failed to load swagger", source=url_or_path, error=str(e))
+            logger.error("Initial swagger load failed", error=str(e))
+
+        while True:
+            await asyncio.sleep(interval)
+            try:
+                await self.load_swagger(source_url)
+            except Exception as e:
+                logger.warning("Auto-update check failed", error=str(e))
+
+    async def load_swagger(self, source: str):
+        logger.info("Loading tools definition...", source=source)
+        spec = None
+        try:
+            if source.startswith("http"):
+                async with httpx.AsyncClient() as client:
+                    resp = await client.get(source, timeout=30.0)
+                    resp.raise_for_status()
+                    spec = resp.json()
+            else:
+                with open(source, 'r', encoding='utf-8') as f:
+                    spec = json.load(f)
+        except Exception as e:
+            logger.error("Failed to load Swagger", source=source, error=str(e))
+            return
+
+        if spec:
+            await self._process_spec(spec)
+            self.tools_map.update(self.custom_tools)
+            self.is_ready = True
+            logger.info("Tools loaded successfully", total_tools=len(self.tools_map))
+
+    async def _process_spec(self, spec: dict):
+        new_map = {}
+        paths = spec.get('paths', {})
+        for path, methods in paths.items():
+            for method, details in methods.items():
+                if method.lower() not in ['get', 'post', 'put', 'delete', 'patch']: continue
+                
+                op_id = details.get('operationId')
+                if not op_id:
+                    # Fallback ako nema ID-a: napravi ga iz putanje
+                    clean_path = path.replace("/", "_").strip("_")
+                    op_id = f"{method.lower()}_{clean_path}"
+                    details['operationId'] = op_id
+
+                # [FIX] REGEX SANITIZACIJA IMENA
+                # Azure dopušta samo: a-z, A-Z, 0-9, _, -
+                # Sve ostalo (npr. {}, :, razmaci) pretvaramo u _
+                op_id = re.sub(r'[^a-zA-Z0-9_\-]', '_', op_id)
+                
+                # Ukloni višestruke donje crte (npr. get___vehicle)
+                op_id = re.sub(r'_+', '_', op_id)
+
+                desc = f"{details.get('summary', '')} {details.get('description', '')}"
+                if not desc.strip(): desc = f"{method.upper()} {path}"
+                
+                openai_schema = self._to_openai_schema(op_id, desc, details)
+                
+                new_map[op_id] = {
+                    "path": path,
+                    "method": method.upper(),
+                    "def": openai_schema,
+                    "server": spec.get("servers", [{"url": ""}])[0].get("url", "")
+                }
+        self.tools_map = new_map
+
+    async def find_relevant_tools(self, query: str, top_k: int = 40) -> List[Dict]:
+        """Keyword Search (Bez embeddinga)."""
+        if not self.is_ready:
+             return [t["def"] if "def" in t else t for t in self.custom_tools.values()]
+
+        selected_tools = []
+        for tool in self.custom_tools.values():
+            val = tool
+            if "def" in tool: val = tool["def"]
+            selected_tools.append(val)
+
+        query_parts = [word for word in query.lower().split() if len(word) > 2]
+        scored_tools = []
+
+        for op_id, tool_data in self.tools_map.items():
+            if op_id in self.custom_tools: continue
+
+            tool_def = tool_data["def"]
+            tool_name = tool_def["function"]["name"].lower()
+            tool_desc = tool_def["function"]["description"].lower() if tool_def["function"]["description"] else ""
+            
+            score = 0
+            for part in query_parts:
+                if part in tool_name: score += 5
+                elif part in tool_desc: score += 1
+
+            if score == 0 and "get" in tool_name and len(scored_tools) < 10:
+                score = 0.1
+
+            if score > 0:
+                scored_tools.append((score, tool_def))
+
+        scored_tools.sort(key=lambda x: x[0], reverse=True)
+        for score, tool_def in scored_tools[:top_k]:
+            selected_tools.append(tool_def)
+        
+        if len(selected_tools) < 2:
+             fallback = [v["def"] for k,v in list(self.tools_map.items())[:10] if "get" in k.lower()]
+             selected_tools.extend(fallback)
+
+        logger.info(f"Selected {len(selected_tools)} tools for query: '{query}'")
+        return selected_tools
+
+    def _sanitize_property(self, prop_schema: dict, prop_name: str, depth=0) -> dict:
+        if depth > 5: return {"type": "string"}
+        t = prop_schema.get("type", "string")
+        d = prop_schema.get("description", "") or prop_name
+        res = {"type": t, "description": d}
+        
+        if t == "array":
+            items = prop_schema.get("items", {})
+            if not items: res["items"] = {"type": "string"}
+            else: res["items"] = self._sanitize_property(items, f"{prop_name}_item", depth+1)
+        elif t == "object":
+            props = prop_schema.get("properties", {})
+            if props:
+                new_props = {}
+                for k, v in props.items(): new_props[k] = self._sanitize_property(v, k, depth+1)
+                res["properties"] = new_props
+        return res
 
     def _to_openai_schema(self, name, desc, details):
-        """
-        Pretvara Swagger operaciju u OpenAI Function Schema.
-        Sadrži 'Auto-Fix' logiku za neispravne Swaggere (poput array missing items).
-        """
         params = {"type": "object", "properties": {}, "required": []}
         
-        # 1. Obrada Query/Path parametara
         for p in details.get("parameters", []):
             p_name = p.get("name")
-            p_schema = p.get("schema", {})
-            p_type = p_schema.get("type", "string")
-            p_desc = p.get("description", "") or p_name
-
-            prop_def = {
-                "type": p_type, 
-                "description": p_desc
-            }
-
-            # [FIX] OpenAI Crash Prevention: Array mora imati 'items'
-            if p_type == "array":
-                if "items" in p_schema:
-                    # Kopiramo postojeći items definition
-                    prop_def["items"] = p_schema["items"]
-                else:
-                    # Fallback: Ako fali, pretpostavljamo array of strings
-                    prop_def["items"] = {"type": "string"}
-
-            params["properties"][p_name] = prop_def
+            # [FIX] Imena parametara također moraju biti čista
+            clean_p_name = re.sub(r'[^a-zA-Z0-9_\-]', '_', p_name)
             
-            if p.get("required"): 
-                params["required"].append(p_name)
+            p_schema = p.get("schema", {})
+            params["properties"][clean_p_name] = self._sanitize_property(p_schema, clean_p_name)
+            if p.get("required"): params["required"].append(clean_p_name)
 
-        # 2. Obrada Request Body-a (za POST/PUT)
         if "requestBody" in details:
             content = details["requestBody"].get("content", {})
-            # Tražimo JSON ili Form data
             schema = content.get("application/json", {}).get("schema", {}) or \
                      content.get("application/x-www-form-urlencoded", {}).get("schema", {})
             
             for p_name, p_schema in schema.get("properties", {}).items():
-                p_type = p_schema.get("type", "string")
-                
-                prop_def = {
-                    "type": p_type,
-                    "description": p_schema.get("description", "") or p_name
-                }
-
-                # [FIX] OpenAI Crash Prevention za Body
-                if p_type == "array":
-                    if "items" in p_schema:
-                        prop_def["items"] = p_schema["items"]
-                    else:
-                        prop_def["items"] = {"type": "string"}
-
-                params["properties"][p_name] = prop_def
-                
+                clean_p_name = re.sub(r'[^a-zA-Z0-9_\-]', '_', p_name)
+                params["properties"][clean_p_name] = self._sanitize_property(p_schema, clean_p_name)
                 if p_name in schema.get("required", []):
-                    params["required"].append(p_name)
+                    params["required"].append(clean_p_name)
+
+        ignored = ["VehicleId", "vehicleId", "assetId", "DriverId", "personId", "TenantId"]
+        params["required"] = [r for r in params["required"] if r not in ignored]
 
         return {
             "type": "function",
             "function": {
                 "name": name,
-                "description": desc[:1024], # OpenAI limit
+                "description": desc[:1000],
                 "parameters": params
             }
         }
-
-    async def _refresh_embeddings(self):
-        """Generira embeddinge samo za nove/promijenjene alate."""
-        new_embeddings = []
-        
-        for name, tool_data in self.tools_map.items():
-            tool_def = tool_data["def"]
-            # Kreiramo hash alata da vidimo je li se promijenio
-            tool_json = json.dumps(tool_def, sort_keys=True)
-            tool_hash = hashlib.md5(tool_json.encode()).hexdigest()
-            
-            cached_hash = await self.redis.get(f"{REDIS_TOOL_HASH_PREFIX}{name}")
-            
-            if cached_hash == tool_hash:
-                # Nije se promijenio, učitaj embedding iz cachea
-                cached_embed = await self.redis.get(f"{REDIS_TOOL_EMBED_PREFIX}{name}")
-                if cached_embed:
-                    new_embeddings.append({
-                        "tool": tool_def,
-                        "embedding": json.loads(cached_embed)
-                    })
-                    continue
-            
-            # Promijenio se ili je nov -> Generiraj Embedding
-            desc = tool_def["function"]["description"]
-            # Embedding radimo na temelju Imena i Opisa
-            embedding = await self._generate_embedding(f"{name}: {desc}")
-            
-            if embedding:
-                # Spremi u Redis
-                await self.redis.set(f"{REDIS_TOOL_HASH_PREFIX}{name}", tool_hash, ex=CACHE_TTL)
-                await self.redis.set(f"{REDIS_TOOL_EMBED_PREFIX}{name}", json.dumps(embedding), ex=CACHE_TTL)
-                
-                new_embeddings.append({
-                    "tool": tool_def,
-                    "embedding": embedding
-                })
-        
-        self.tool_embeddings = new_embeddings
-        self.is_ready = True
-        logger.info("Tool Registry refreshed", total_tools=len(self.tools_map))
-
-    async def _generate_embedding(self, text: str) -> List[float]:
-        try:
-            resp = await self.client.embeddings.create(
-                input=text,
-                model="text-embedding-3-small"
-            )
-            return resp.data[0].embedding
-        except Exception as e:
-            logger.error("Embedding generation failed", error=str(e))
-            return None
-
-    async def find_relevant_tools(self, query: str, top_k: int = 5) -> List[dict]:
-        """Semantička pretraga alata."""
-        if not self.is_ready or not self.tool_embeddings:
-            # Fallback ako nismo spremni
-            return [t["def"] for t in list(self.tools_map.values())[:top_k]]
-            
-        query_embedding = await self._generate_embedding(query)
-        if not query_embedding:
-            return []
-
-        # Računanje kosinusne sličnosti
-        scores = []
-        for item in self.tool_embeddings:
-            similarity = np.dot(query_embedding, item["embedding"])
-            scores.append((similarity, item["tool"]))
-            
-        # Sortiranje i vraćanje najboljih
-        scores.sort(key=lambda x: x[0], reverse=True)
-        return [s[1] for s in scores[:top_k]]
-
-    async def start_auto_update(self, url: str):
-        """Periodički osvježava Swagger (npr. svakih sat vremena)."""
-        while True:
-            await asyncio.sleep(3600)
-            await self.load_swagger(url)

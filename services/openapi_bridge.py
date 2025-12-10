@@ -44,19 +44,14 @@ class OpenAPIGateway:
         self.redis = redis.from_url(redis_url, encoding="utf-8", decode_responses=True)
 
     async def execute_tool(self, tool_def: dict, params: dict, user_context: dict = None) -> Any:
-        """
-        Izvršava API poziv, automatski ubacuje sve potrebne headere (Auth i x-tenant)
-        i delegira poziv na _do_request (koji hendla token refresh).
-        """
         method = tool_def["method"].upper()
         path = tool_def["path"]
         
-        # Inicijalizacija spremnika
         path_params = {}
         query_params = {}
         body_params = {}
         
-        # Razvrstavanje parametara (Path vs Query vs Body)
+        # Razvrstavanje parametara
         for key, value in params.items():
             if f"{{{key}}}" in path:
                 path_params[key] = value
@@ -65,24 +60,29 @@ class OpenAPIGateway:
             else:
                 query_params[key] = value
 
-        # Priprema HTTP zaglavlja
         headers = {
             "Content-Type": "application/json",
             "Accept": "application/json"
         }
         
-        # 1. Tenant Injection (CRITICAL)
+        # Tenant Injection
         if user_context and user_context.get("tenant_id"):
             headers["x-tenant"] = user_context["tenant_id"]
 
-        # 2. Finalizacija URL-a
+        # Finalizacija URL-a
         try:
             final_url = f"{self.base_url}{path.format(**path_params)}"
         except KeyError as e:
-            raise Exception(f"AI je zaboravio obavezni path parametar: {str(e)}")
+            raise Exception(f"Fali obavezni parametar u URL-u: {str(e)}")
         
+        # ================================================================
+        # 🕵️ SPY LOG 1: ŠTO ŠALJEMO?
+        # ================================================================
+        logger.warning(f"🚀 [API REQUEST] {method} {final_url}")
+        logger.warning(f"📦 [API PAYLOAD] Query: {query_params} | Body: {body_params}")
+        # ================================================================
+
         try:
-            # DELEGACIJA POZIVA na _do_request za automatski token refresh
             response_data = await self._do_request(
                 method, 
                 final_url, 
@@ -91,21 +91,27 @@ class OpenAPIGateway:
                 headers=headers 
             )
             
-            # Ako _do_request vrati grešku (nakon 401 i propalog refresh-a)
+            # ================================================================
+            # 🕵️ SPY LOG 2: ŠTO SMO DOBILI?
+            # ================================================================
+            logger.warning(f"✅ [API RESULT] Data: {str(response_data)[:500]}...") # Prvih 500 znakova
+            # ================================================================
+
             if isinstance(response_data, dict) and response_data.get("error"):
                  raise Exception(response_data.get("message"))
 
-            # _do_request već vraća parsirani JSON ili status 204
             return response_data
 
         except httpx.HTTPStatusError as e:
-            error_msg = f"API Error {e.response.status_code}: {e.response.text}"
-            logger.error("API Call Failed", url=final_url, error=error_msg)
-            raise Exception(error_msg)
-        except Exception as e:
-            logger.error("System Error during API call", error=str(e))
-            raise e
+            # Ovo će uhvatiti 404, 400, 500
+            error_msg = f"❌ API HTTP Error {e.response.status_code}: {e.response.text}"
+            logger.error(error_msg)
+            return {"error": f"API Error: {e.response.status_code}"} # Vrati AI-u da zna da je greška
             
+        except Exception as e:
+            logger.error("❌ System Error during API call", error=str(e))
+            raise e
+
     @api_breaker
     @retry(     
         stop=stop_after_attempt(3), 
@@ -116,29 +122,26 @@ class OpenAPIGateway:
     async def _do_request(self, method: str, url: str, **kwargs) -> Dict[str, Any]:
         response = await self.client.request(method, url, **kwargs)
 
-        # --- Token Refresh Logika (Distribuirana) ---
+        # Token Refresh Logika... (tvoja postojeća logika)
         if response.status_code == 401:
             logger.info("Token expired (401), attempting distributed refresh...")
-            
             refreshed = await self._secure_refresh_token()
-            
             if refreshed:
-                # Ažuriraj header za ponovni pokušaj
                 if "headers" in kwargs:
                     kwargs["headers"]["Authorization"] = self.client.headers["Authorization"]
                 else:
                     kwargs["headers"] = {"Authorization": self.client.headers["Authorization"]}
-                
-                # Manual retry call
                 response = await self.client.request(method, url, **kwargs)
             else:
                 logger.error("Token refresh failed.")
-                return {"error": True, "message": "Autorizacija neuspjela."}
+                return {"error": True, "message": "Auth failed"}
 
-        if response.status_code >= 500:
-            response.raise_for_status()
-
-        response.raise_for_status()
+        # [BITNO] Ako API vrati 404 Not Found, httpx ne diže error sam od sebe ako ne zoveš raise_for_status()
+        # Ali mi želimo vidjeti logove prije nego pukne.
+        
+        if response.status_code >= 400:
+            logger.error(f"🛑 API FAIL {response.status_code} Body: {response.text}")
+            response.raise_for_status() # Ovo baca exception koji execute_tool hvata
         
         if response.status_code == 204:
             return {"status": "success", "data": None}
@@ -147,7 +150,7 @@ class OpenAPIGateway:
             return response.json()
         except json.JSONDecodeError:
             return {"response_text": response.text}
-
+            
     async def _secure_refresh_token(self) -> bool:
         """
         Koristi Redis Lock da osigura da samo jedan worker osvježava token.

@@ -1,6 +1,6 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
-from typing import Literal, Optional, List, Dict # [NOVO] Dodan Dict
+from typing import Literal, Optional, List, Dict 
 
 class Settings(BaseSettings):
     APP_ENV: Literal["development", "production", "testing"] = "development"
@@ -15,8 +15,13 @@ class Settings(BaseSettings):
     DB_POOL_RECYCLE: int = 3600
     
     # --- AI CONFIGURATION ---
-    OPENAI_API_KEY: str
-    OPENAI_MODEL: str = "gpt-3.5-turbo"
+    #OPENAI_API_KEY: str
+    #OPENAI_MODEL: str = "gpt-3.5-turbo"
+    AZURE_OPENAI_ENDPOINT: str
+    AZURE_OPENAI_API_KEY: str
+    AZURE_OPENAI_API_VERSION: str = "2024-08-01-preview"
+    AZURE_OPENAI_DEPLOYMENT_NAME: str = "gpt-4o-mini"
+    AZURE_OPENAI_EMBEDDING_DEPLOYMENT: str = "text-embedding-3-small"
     
     # --- 3RD PARTY ---
     INFOBIP_BASE_URL: str
@@ -44,6 +49,7 @@ class Settings(BaseSettings):
     ACTIVE_SERVICES: Dict[str, str] = {
         "automation": "v1.0.0",   
         "tenantmgt": "v2.0.0-alpha",     
+        "vehiclemgt" : "v2.0.0-alpha"
     }
 
     @property
