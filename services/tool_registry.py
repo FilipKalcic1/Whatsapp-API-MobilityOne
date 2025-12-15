@@ -49,41 +49,45 @@ class ToolRegistry:
         self.is_ready = False 
         
         # --- POSLOVNA LOGIKA (PROMPT OVERRIDES) ---
+        # Definiramo pravila koja ne pišu u Swaggeru, a ključna su za ispravno pozivanje.
+        # --- POSLOVNA LOGIKA (BOSS RULES) ---
+        # --- POSLOVNA LOGIKA (BOSS RULES) ---
+        # --- POSLOVNA LOGIKA (BOSS RULES) ---
+                # --- POSLOVNA LOGIKA (BOSS MODE) ---
+        # Ove instrukcije striktno kontroliraju AI ponašanje za booking flow
+# --- POSLOVNA LOGIKA (BOSS RULES - FINALNA VERZIJA) ---
         self.prompt_overrides = {
             # KORAK 1: PRETRAGA
             "get__AvailableVehicles": (
                 "🚨 **KORAK 1**: PRETRAGA SLOBODNIH VOZILA. "
-                "SVRHA: Pronaći dostupna vozila na temelju vremena. "
-                "PRAVILA ZA AI: "
-                "1. Provjeri imaš li datume (od/do). Ako nemaš, PITAJ KORISNIKA. "
-                "2. Pretvori datume u ISO format. "
-                "3. 'driverId' će sustav poslati automatski (ne brini o tome). "
-                "4. REZULTAT: Prikaži korisniku marku i model pronađenih vozila i PITAJ GA KOJE ŽELI. "
-                "5. NEMOJ ODMAH REZERVIRATI. Čekaj potvrdu korisnika."
+                "PRIJE POZIVA PROVJERI: Je li korisnik naveo: Datum polaska i povratka? "
+                "AKO NIJE: Pitaj ga te datume. "
+                "SVRHA POZIVA: Dobiti listu vozila i njihov 'VehicleId'. "
+                "PARAMETRI: "
+                "- from/to: ISO datumi (YYYY-MM-DDTHH:MM:SS). "
+                "- driverId: (Uvijek šalji personId iz konteksta). "
+                "NAKON POZIVA: Prikaži korisniku vozilo (Marka, Model) i pitaj želi li rezervirati."
             ),
 
             # KORAK 2: REZERVACIJA
             "post__VehicleCalendar": (
-                "✅ **KORAK 2**: KREIRANJE REZERVACIJE (BOOKING). "
-                "SVRHA: Rezervirati točno određeno vozilo. "
-                "PREDUVJETI: "
-                "1. Moraš imati 'VehicleId' (iz Koraka 1). "
-                "2. Moraš imati detalje puta: Odredište, Svrha, Broj putnika. "
-                "   -> AKO KORISNIK TO NIJE REKAO: Pitaj ga sada: 'Kamo putujete, koja je svrha i koliko vas ide?' "
+                "✅ **KORAK 2**: KREIRANJE REZERVACIJE. "
+                "UVJET: Smiješ zvati samo ako imaš 'VehicleId' (iz Koraka 1). "
+                "PRIJE POZIVA PROVJERI: Je li korisnik naveo: Odredište, Svrhu puta, Broj putnika? "
+                "AKO NIJE: Pitaj ga te podatke PRIJE nego pozoveš ovu funkciju. "
                 
                 "PAYLOAD PRAVILA: "
-                "- VehicleId: (ID odabranog vozila) "
-                "- FromTime/ToTime: (ISO datumi polaska/povratka) "
-                "- Description: Spoji u string: 'Odredište: [X], Svrha: [Y], Putnika: [Z]' "
-                "- AssigneeType: 1 "
-                "- EntryType: 0 "
-                "- AssignedToId: (Sustav šalje automatski iz konteksta)"
+                "- 'VehicleId': ID odabranog vozila. "
+                "- 'FromTime' / 'ToTime': Datumi rezervacije. "
+                "- 'Description': SPOJI OVE PODATKE: 'Odredište: [X], Svrha: [Y], Putnika: [Z]'. "
+                "- 'AssigneeType': 1 "
+                "- 'EntryType': 0 "
+                "- 'AssignedToId': (personId iz konteksta)"
             ),
 
-            # SKRIVANJE NEPOTREBNOG (Focus Mode)
+            # SKRIVANJE NEPOTREBNOG
             "post__Booking": "🚫 ZABRANJENO. NE KORISTI.",
             "get__VehicleAssignments": "🚫 NE KORISTI.",
-            "post__Batch": "🚫 NE KORISTI.",
         }
 
 
