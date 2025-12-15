@@ -1,35 +1,23 @@
 import orjson
 import structlog
-from typing import List, Dict, Any
+import uuid
+import json
+from typing import List, Dict, Any, Optional
 from openai import AsyncAzureOpenAI
 from config import get_settings
 
 settings = get_settings()
 logger = structlog.get_logger("ai")
 
-# 1. Inicijalizacija Azure Klijenta
 client = AsyncAzureOpenAI(
     azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
     api_key=settings.AZURE_OPENAI_API_KEY,
     api_version=settings.AZURE_OPENAI_API_VERSION
 )
 
-# 2. Helper funkcija za siguran dump podataka (FIX ZA TVOJ ERROR)
-def safe_dump(obj: Any) -> Any:
-    """
-    Robustno pretvara objekt u dictionary.
-    Rješava grešku: 'dict object has no attribute model_dump'
-    """
-    if isinstance(obj, dict):
-        return obj
-    if hasattr(obj, "model_dump"):
-        return obj.model_dump()
-    if hasattr(obj, "dict"):
-        return obj.dict()
-    return obj
-
-# 3. System Prompt (Skraćeno radi preglednosti, ostavi svoj puni prompt ovdje)
-SYSTEM_PROMPT = """
+# --- SYSTEM PROMPT (Template) ---
+# Ovo se koristi samo ako engine.py ne pošalje svoj prompt
+DEFAULT_SYSTEM_PROMPT = """
 SYSTEM DATA SNAPSHOT:
 You are the MobilityOne Assistant for {display_name}.
 
@@ -50,45 +38,22 @@ When a tool requires an ID, use these values immediately:
 ### GLAVNE DIREKTIVE (CORE BEHAVIOR):
 
 1. **SMART PARAMETER EXTRACTION (KRITIČNO):**
-   - Tvoj cilj je popuniti parametre alata iz prirodnog govora korisnika.
-   - **PRIMJER 1 (Prijava štete):**
-     - Korisnik: "Prijavi da sam ogrebao branik na parkingu."
-     - Tvoja logika: Alat `/AddCase` traži 'Subject' i 'Message'.
-     - Tvoja akcija: Postavi 'Subject'="Prijava štete", 'Message'="Ogrebao branik na parkingu". PITAJ ZA POTVRDU.
-   - **PRIMJER 2 (Kilometraža):**
-     - Korisnik: "Trenutno stanje je 150000 km."
-     - Tvoja logika: Alat `/AddMileage` traži 'Value'.
-     - Tvoja akcija: Postavi 'Value'=150000. Izvrši (ili pitaj potvrdu).
-   - **ZABRANA:** Nemoj pitati "Koji je razlog?" ako je korisnik već rekao razlog u prvoj rečenici.
+   - Cilj: Popuniti parametre iz govora.
+   - Primjer: "Prijavi štetu na braniku" -> Subject="Prijava štete", Message="Šteta na braniku".
 
-2. **PROTOKOL IZVRŠAVANJA (READ vs WRITE):**
-   - **READ (GET):** Ako korisnik pita "Kad mi ističe registracija?", pogledaj KEYRING (gore). Ako piše tamo, odgovori ODMAH. Ako piše 'UNKNOWN', tek onda zovi alat.
-   - **WRITE (POST/PUT):** Za sve akcije koje nešto mijenjaju (Prijave, Zahtjevi), MORAŠ sažeti što ćeš napraviti i tražiti "DA" ili "POTVRĐUJEM".
+2. **PROTOKOL IZVRŠAVANJA:**
+   - READ: Ako je podatak u KEYRING-u, odgovori odmah.
+   - WRITE: Za akcije traži potvrdu ("DA" ili "POTVRĐUJEM").
 
-3. **STIL KOMUNIKACIJE (FLEET MANAGER PERSONA):**
-   - Jezik: Hrvatski.
-   - Ton: Profesionalan, kratak, operativan.
-   - **ZABRANJENO:** "Dobar dan" usred chata. Počni odgovor direktno informacijom.
-   - **DOBRO:** "🚗 Vozilo: *Audi A4* (*ZG-1234-AB*)"
+3. **STIL:**
+   - Hrvatski jezik. Kratko. Profesionalno.
+   - Bez "Dobar dan" svako malo.
 
-4. **VIZUALNA PREZENTACIJA (WHATSAPP FORMATIRANJE):**
-   - **BOLDING:** Ključne podatke stavi unutar zvjezdica (npr. *ZG-1234-AB*).
-   - **EMOJIS:** Koristi 1 emotikon po konceptu (🚗, 💶, 📅, ✅, ⚠️).
-   - **LISTE:** Koristi natuknice (-).
+4. **FORMATIRANJE:**
+   - Boldaj ključno (*ZG-1234*). Emoji po potrebi.
 
-5. **FINANCIJSKI INTEGRITET:**
-   - Iznose prikazuj točno (npr. "*450.23 EUR*"). Ne konvertiraj valute.
-
-6. **RJEŠAVANJE PROBLEMA (FALLBACK):**
-   - Ako alat vrati grešku, reci: "⚠️ Trenutno ne mogu dohvatiti taj podatak."
-   - Nemoj izmišljati datume ili iznose.
-
-7. **RUKOVANJE POTVRDAMA (MEMORY CHECK - SUPER IMPORTANT):**
-   - Ako korisnik kaže samo **"DA"**, **"MOŽE"**, **"POTVRĐUJEM"** ili **"OK"**:
-   - **POGLEDAJ SVOJU ZADNJU PORUKU U POVIJESTI.**
-   - Da li si upravo pitao za potvrdu akcije (npr. "Da li potvrđujete?")?
-   - **AKO JESI:** ODMAH IZVRŠI TU AKCIJU s parametrima koje si sam predložio.
-   - **ZABRANJENO:** Reći "Ne razumijem na što se odnosi DA". Moraš povezati kontekst.
+5. **POTVRDE:**
+   - Ako korisnik kaže "DA", izvrši akciju predloženu u prošloj poruci.
 
 Sada analiziraj povijest i pomozi korisniku {display_name}.
 """
@@ -97,107 +62,127 @@ async def analyze_intent(
     history: List[Dict], 
     current_text: str, 
     tools: List[Dict] = None,
-    retry_count: int = 0,
-    system_instruction: str = None 
+    system_instruction: str = None
 ) -> Dict[str, Any]:
+    """
+    Glavna funkcija za komunikaciju s OpenAI.
+    Priprema povijest, šalje alate i vraća odluku.
+    """
     
-    if retry_count > 1:
-        logger.error("Max retries reached")
-        return _text_response("Tehnička greška u formatu podataka.")
-
-    messages = _construct_messages(history, current_text, system_instruction)
+    # 1. Priprema poruka (FLATTENING)
+    # Ovo pretvara kompleksne tool-call strukture iz prošlosti u običan tekst
+    # kako bi izbjegli 400 Bad Request greške zbog "broken chain-a".
+    messages = _construct_safe_messages(history, current_text, system_instruction)
 
     try:
+        # 2. Priprema alata za OpenAI format
+        openai_tools = []
+        if tools:
+            for t in tools:
+                # Osiguraj da je format ispravan
+                if t.get("type") == "function" and "function" in t:
+                    openai_tools.append(t)
+                else:
+                    # Fallback ako je došao samo dict funkcije
+                    openai_tools.append({"type": "function", "function": t})
+        
         call_args = {
-            # Ovdje koristimo CHAT deployment name
             "model": settings.AZURE_OPENAI_DEPLOYMENT_NAME,
             "messages": messages,
-            "temperature": 0, 
+            "temperature": 0.0, # Deterministički odgovori
         }
 
-        if tools:
-            call_args["tools"] = tools
+        if openai_tools:
+            call_args["tools"] = openai_tools
             call_args["tool_choice"] = "auto" 
+            logger.info(f"🧠 Sending {len(openai_tools)} tools to OpenAI")
 
+        # 3. HTTP Poziv prema OpenAI
         response = await client.chat.completions.create(**call_args)
+        
+        # Validacija odgovora
+        if not response.choices:
+            logger.error("❌ OpenAI returned empty choices list")
+            return _text_response("Greška: Prazan odgovor od AI servisa.")
+
         msg = response.choices[0].message
         
-        if msg.tool_calls:
-            return await _handle_tool_decision(
-                msg.tool_calls[0], 
-                msg.tool_calls, 
-                history, 
-                current_text, 
-                tools, 
-                retry_count, 
-                system_instruction
-            )
+        # --- DEBUG LOGGING ---
+        # Koristimo 'getattr' da ne pukne ako je content None
+        content_safe = getattr(msg, 'content', '') or ''
+        tool_calls_count = len(msg.tool_calls) if msg.tool_calls else 0
+        logger.info(f"🤖 RAW OPENAI RESPONSE: content='{content_safe[:50]}...' tool_calls={tool_calls_count}")
+        # ---------------------
 
+        # 4. Obrada odluke (Tool vs Text)
+        if msg.tool_calls:
+            # AI želi zvati alat
+            tool_call = msg.tool_calls[0]
+            try:
+                args = json.loads(tool_call.function.arguments)
+            except json.JSONDecodeError:
+                logger.warning("⚠️ AI generated invalid JSON arguments", raw=tool_call.function.arguments)
+                args = {} # Fallback
+
+            return {
+                "tool": tool_call.function.name,
+                "parameters": args,
+                "tool_call_id": tool_call.id,
+                "raw_tool_calls": msg.tool_calls, # Ovo vraćamo da engine može spremiti u povijest
+                "response_text": None
+            }
+
+        # AI samo odgovara tekstom
         return _text_response(msg.content)
 
     except Exception as e:
-        logger.error("AI inference failed", error=str(e))
+        logger.error("🔥 AI Critical Failure", error=str(e))
         return _text_response("Isprike, sustav je trenutno nedostupan (AI Error).")
 
-# --- Helper Methods ---
+# --- HELPER METHODS ---
 
-def _construct_messages(history: list, text: str, instruction: str | None) -> list:
-    msgs = [{"role": "system", "content": SYSTEM_PROMPT}]
-    if instruction:
-        msgs.append({"role": "system", "content": instruction})
+def _construct_safe_messages(history: list, text: str, instruction: str | None) -> list:
+    """
+    Gradi sigurnu povijest poruka.
+    Pretvara prošle 'tool_calls' u tekstualne opise kako bi se izbjegle greške u API pozivima.
+    """
+    base_prompt = instruction if instruction else DEFAULT_SYSTEM_PROMPT
+    msgs = [{"role": "system", "content": base_prompt}]
     
-    i = 0
-    while i < len(history):
-        msg = history[i]
+    for msg in history:
         role = msg.get("role")
+        content = msg.get("content")
         
-        if role == "assistant" and msg.get("tool_calls"):
-            is_paired = False
-            if i + 1 < len(history) and history[i+1].get("role") == "tool":
-                is_paired = True
-            
-            if is_paired:
-                # [FIX] Koristimo safe_dump da se ne sruši
-                raw_tools = msg["tool_calls"]
-                safe_tools = [safe_dump(t) for t in raw_tools] if isinstance(raw_tools, list) else raw_tools
-                
-                msgs.append({"role": "assistant", "content": None, "tool_calls": safe_tools})
+        # 1. User poruke prolaze netaknute
+        if role == "user":
+            msgs.append({"role": "user", "content": content or ""})
+        
+        # 2. Assistant poruke
+        elif role == "assistant":
+            # Ako je poruka imala tool_calls, pretvori ih u tekst
+            if "tool_calls" in msg and msg["tool_calls"]:
+                tool_name = msg["tool_calls"][0]["function"]["name"]
+                # Simuliramo da je AI rekao "Zovem alat X..."
+                msgs.append({"role": "assistant", "content": f"🛠️ [System Action: Calling tool '{tool_name}']"})
             else:
-                pass 
+                msgs.append({"role": "assistant", "content": content or ""})
+        
+        # 3. Tool poruke (Rezultati)
         elif role == "tool":
-            if msg.get("tool_call_id"):
-                 msgs.append(msg)
-        else:
-            content = msg.get("content")
-            if content:
-                msgs.append({"role": role, "content": content})
-        i += 1
-
+            # Pretvori rezultat alata u System poruku s kontekstom
+            # Ovo je trik: OpenAI bolje razumije rezultate ako su dio konteksta, a ne "broken chain" tool poruka
+            msgs.append({"role": "system", "content": f"🛠️ [Tool Result]: {content}"})
+            
+    # Dodaj trenutni upit korisnika
     if text:
         msgs.append({"role": "user", "content": text})
+        
     return msgs
 
-async def _handle_tool_decision(primary_tool, all_tools, history, text, tools, retry, sys_instr) -> dict:
-    function_name = primary_tool.function.name
-    arguments_str = primary_tool.function.arguments
-    
-    try:
-        parameters = orjson.loads(arguments_str)
-        logger.info("AI selected tool", tool=function_name)
-        
-        # [FIX] Primjena sigurnog dumpa na listu alata
-        safe_tool_calls = [safe_dump(t) for t in all_tools]
-
-        return {
-            "tool": function_name,
-            "parameters": parameters,
-            "tool_call_id": primary_tool.id,
-            "raw_tool_calls": safe_tool_calls, # Sada je ovo sigurno
-            "response_text": None
-        }
-    except orjson.JSONDecodeError:
-        logger.warning("AI generated invalid JSON", raw=arguments_str)
-        return await analyze_intent(history, current_text=text, tools=tools, retry_count=retry + 1, system_instruction=sys_instr)
-
 def _text_response(text: str) -> dict:
-    return {"tool": None, "parameters": {}, "response_text": text or "Nisam razumio."}
+    return {
+        "tool": None, 
+        "parameters": {}, 
+        "response_text": text or "Nisam razumio.",
+        "tool_call_id": None
+    }
