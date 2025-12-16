@@ -1,60 +1,66 @@
-# schemas.py
-from pydantic import BaseModel, Field
+"""
+Pydantic schemas for MobilityOne v6.0
+"""
 from typing import Optional
+from pydantic import BaseModel
+
 
 class UserData(BaseModel):
-    person_id: str = Field(..., description="GUID korisnika iz MasterData")
-    phone: str
-    display_name: str
-    email: str = "UNKNOWN"
-    tenant_id: Optional[str] = None
+    """User information."""
+    person_id: str = "UNKNOWN"
+    phone: str = ""
+    display_name: str = "Korisnik"
+    tenant_id: str = ""
+
 
 class OrgData(BaseModel):
+    """Organization info."""
     cost_center_id: str = "UNKNOWN"
     department_id: str = "UNKNOWN"
-    manager_id: str = "UNKNOWN"
+
 
 class VehicleData(BaseModel):
+    """Vehicle information."""
     id: str = "UNKNOWN"
     plate: str = "UNKNOWN"
-    name: str = "Nema vozila"
-    reg_expiry: str = "UNKNOWN"
+    name: str = "UNKNOWN"
     vin: str = "UNKNOWN"
+    mileage: str = "UNKNOWN"  # Added!
+
 
 class FinancialData(BaseModel):
+    """Financial/contract info."""
     monthly_amount: str = "UNKNOWN"
     remaining_amount: str = "UNKNOWN"
     leasing_provider: str = "UNKNOWN"
 
+
 class OperationalContext(BaseModel):
-    """
-    Jedan objekt koji drži SVE podatke.
-    Ovo je tvoj 'Keyring'.
-    """
+    """Complete user context for AI."""
     user: UserData
     org: OrgData
     vehicle: VehicleData
     contract: FinancialData
-
+    
     def to_prompt_block(self) -> str:
-        """Pretvara objekt u lijepi string za AI Prompt."""
-        lines = []
-        # User
-        lines.append(f"- User.PersonId: {self.user.person_id}")
-        lines.append(f"- User.DisplayName: {self.user.display_name}")
-        lines.append(f"- User.Phone: {self.user.phone}")
+        """Format for system prompt."""
+        return (
+            f"KORISNIK: {self.user.display_name} (ID: {self.user.person_id[:8]}...)\n"
+            f"VOZILO: {self.vehicle.name} ({self.vehicle.plate})\n"
+            f"KILOMETRAŽA: {self.vehicle.mileage} km\n"
+            f"VIN: {self.vehicle.vin}"
+        )
+
         
-        # Vehicle - [POPRAVAK] Dodano ime vozila!
-        lines.append(f"- Vehicle.Id: {self.vehicle.id}")
-        lines.append(f"- Vehicle.Name: {self.vehicle.name}")  # <--- OVO JE FALILO
-        lines.append(f"- Vehicle.Plate: {self.vehicle.plate}")
-        lines.append(f"- Vehicle.RegExpiry: {self.vehicle.reg_expiry}")
-        
-        # Org
-        lines.append(f"- Org.CostCenterId: {self.org.cost_center_id}")
-        
-        # Finance
-        lines.append(f"- Contract.MonthlyAmount: {self.contract.monthly_amount}")
-        lines.append(f"- Contract.LeasingProvider: {self.contract.leasing_provider}") # Dodao sam i ovo da zna tko je leasing
-        
-        return "\n".join(lines)
+class InboundMessage(BaseModel):
+    """Inbound WhatsApp message."""
+    sender: str
+    text: str
+    message_id: str
+
+
+class OutboundMessage(BaseModel):
+    """Outbound WhatsApp message."""
+    to: str
+    text: str
+    correlation_id: Optional[str] = None

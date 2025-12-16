@@ -1,27 +1,44 @@
+"""
+Database Connection - Production Ready
+"""
+
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.orm import sessionmaker
+
 from config import get_settings
+from models import Base
 
 settings = get_settings()
 
-# High-Performance Async Engine
+# Create async engine
 engine = create_async_engine(
     settings.DATABASE_URL,
-    echo=(settings.APP_ENV == "development"),
     pool_size=settings.DB_POOL_SIZE,
     max_overflow=settings.DB_MAX_OVERFLOW,
     pool_recycle=settings.DB_POOL_RECYCLE,
-    pool_pre_ping=True # Pinga bazu prije upita da izbjegne "Closed connection" greške
+    echo=False
 )
 
-# Tvornica sesija
+# Async session factory
 AsyncSessionLocal = sessionmaker(
-    bind=engine,
+    engine,
     class_=AsyncSession,
     expire_on_commit=False,
+    autocommit=False,
     autoflush=False
 )
 
-Base = declarative_base()   
+
+async def init_db():
+    """Create all tables."""
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
 
+async def get_db():
+    """Dependency for getting DB session."""
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+        finally:
+            await session.close()

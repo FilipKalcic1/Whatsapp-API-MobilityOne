@@ -1,350 +1,413 @@
+"""
+OpenAPI Gateway - Production Ready (v8.0)
+
+FEATURES:
+1. Uses tool metadata for URL building
+2. Auto-injects personId, AssignedToId, TenantId
+3. Handles LIST responses (MasterData)
+4. Proper error messages
+5. Query string building for GET requests
+"""
+
 import httpx
 import structlog
-import asyncio
-import json
-import re 
-from datetime import datetime, timedelta 
-from typing import Dict, Any, Optional, Union
+import re
+from datetime import datetime, timedelta
+from typing import Dict, Any, Optional, Tuple, Union, List
+from urllib.parse import urlencode, quote
 
-# Resilience Libraries
-from tenacity import (
-    retry, stop_after_attempt, wait_exponential, 
-    retry_if_exception_type
-)
-
-# AI
-from openai import AsyncAzureOpenAI 
-from config import get_settings
 import redis.asyncio as redis
 
-# --- KONFIGURACIJA ---
-logger = structlog.get_logger("openapi_bridge")
+from config import get_settings
+
+logger = structlog.get_logger("openapi_gateway")
 settings = get_settings()
 
+TOKEN_CACHE_KEY = "mobility:access_token"
+
+
 class OpenAPIGateway:
-    def __init__(self, base_url: str):
-        """
-        HYBRID GATEWAY - Najbolje od oba svijeta:
-        - Jednostavna i robustna autentifikacija (iz prvog koda)
-        - Pametan routing i AI Inspector (iz drugog koda)
-        """
-        self.base_url = base_url.rstrip('/')
+    """Production API Gateway v8."""
+    
+    def __init__(self, base_url: str = None):
+        self.base_url = (base_url or settings.MOBILITY_API_URL).rstrip("/")
+        self.auth_url = settings.MOBILITY_AUTH_URL
+        self.client_id = settings.MOBILITY_CLIENT_ID
+        self.client_secret = settings.MOBILITY_CLIENT_SECRET
+        self.default_tenant = settings.tenant_id
         
-        # Limiti konekcija
-        self.limits = httpx.Limits(max_keepalive_connections=20, max_connections=100)
-        
-        # Inicijalni headeri (API key ako postoji)
-        headers = {}
-        if hasattr(settings, "MOBILITY_API_KEY") and settings.MOBILITY_API_KEY:
-            headers["Authorization"] = f"Bearer {settings.MOBILITY_API_KEY}"
-
-        self.client = httpx.AsyncClient(timeout=30.0, limits=self.limits, headers=headers)
-        
-        # Redis za caching tokena
-        redis_url = getattr(settings, "REDIS_URL", "redis://redis:6379/0")
-        self.redis = redis.from_url(redis_url, encoding="utf-8", decode_responses=True)
-
-        # AI Client za "Inspekciju" velikih JSON-a
-        self.ai_client = AsyncAzureOpenAI(
-            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
-            api_key=settings.AZURE_OPENAI_API_KEY,
-            api_version=settings.AZURE_OPENAI_API_VERSION
+        self.client = httpx.AsyncClient(
+            timeout=httpx.Timeout(30.0, connect=10.0),
+            limits=httpx.Limits(max_keepalive_connections=20, max_connections=100)
         )
-
-    async def execute_tool(self, tool_def: dict, params: dict, user_context: dict = None) -> Any:
-        """
-        Izvršava alat s pametnim routingom i AI Inspectorom.
-        """
-        raw_path = tool_def["path"]
-        method = tool_def["method"].upper()
+        
+        self._redis: Optional[redis.Redis] = None
+        self._token: Optional[str] = None
+        self._token_expires_at: datetime = datetime.utcnow()
+        
+        logger.info("Gateway v8 initialized", base_url=self.base_url)
+    
+    async def _get_redis(self) -> redis.Redis:
+        if self._redis is None:
+            self._redis = redis.from_url(settings.REDIS_URL, decode_responses=True)
+        return self._redis
+    
+    # =========================================================================
+    # AUTHENTICATION
+    # =========================================================================
+    
+    async def _get_valid_token(self) -> str:
+        """Get valid OAuth2 token."""
+        if self._token and datetime.utcnow() < self._token_expires_at - timedelta(seconds=60):
+            return self._token
         
         try:
-            # 1. PAMETNA RASPODJELA PARAMETARA (iz drugog koda)
-            path_params, query_params, body_params, ai_headers = self._distribute_parameters(raw_path, method, params)
-
-            # Validacija path parametara
-            missing_path_vars = [var for var in re.findall(r"\{([a-zA-Z0-9_\-]+)\}", raw_path) if var not in path_params]
+            r = await self._get_redis()
+            cached = await r.get(TOKEN_CACHE_KEY)
+            if cached:
+                self._token = cached
+                self._token_expires_at = datetime.utcnow() + timedelta(minutes=30)
+                return cached
+        except:
+            pass
+        
+        return await self._fetch_fresh_token()
+    
+    async def _fetch_fresh_token(self) -> str:
+        """Fetch new OAuth2 token."""
+        payload = {
+            "client_id": self.client_id,
+            "client_secret": self.client_secret,
+            "grant_type": "client_credentials",
+            "audience": "none"
+        }
+        
+        headers = {"Content-Type": "application/x-www-form-urlencoded"}
+        
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as auth_client:
+                response = await auth_client.post(self.auth_url, data=payload, headers=headers)
+                
+                if response.status_code != 200:
+                    raise Exception(f"Auth failed: {response.status_code}")
+                
+                data = response.json()
+                token = data.get("access_token")
+                expires_in = int(data.get("expires_in", 3600))
+                
+                self._token = token
+                self._token_expires_at = datetime.utcnow() + timedelta(seconds=expires_in)
+                
+                try:
+                    r = await self._get_redis()
+                    await r.setex(TOKEN_CACHE_KEY, expires_in - 120, token)
+                except:
+                    pass
+                
+                logger.info("Token acquired", expires_in=expires_in)
+                return token
+                
+        except Exception as e:
+            logger.error("Token error", error=str(e))
+            raise
+    
+    async def _invalidate_token(self):
+        """Clear token."""
+        self._token = None
+        self._token_expires_at = datetime.utcnow()
+        try:
+            r = await self._get_redis()
+            await r.delete(TOKEN_CACHE_KEY)
+        except:
+            pass
+    
+    # =========================================================================
+    # CONVENIENCE METHODS
+    # =========================================================================
+    
+    async def get_master_data(self, person_id: str) -> Optional[Dict]:
+        """Get master data for person - handles LIST response."""
+        if not person_id:
+            return None
+        
+        result = await self.execute_tool(
+            tool_def={"path": "/automation/MasterData", "method": "GET"},
+            params={"personId": person_id},
+            user_context={"tenant_id": self.default_tenant}
+        )
+        
+        if isinstance(result, dict) and result.get("error"):
+            return None
+        
+        if isinstance(result, list):
+            return result[0] if len(result) > 0 else None
+        
+        if isinstance(result, dict):
+            if "Data" in result and isinstance(result["Data"], list):
+                return result["Data"][0] if len(result["Data"]) > 0 else None
+            return result
+        
+        return None
+    
+    async def get_person_by_phone(self, phone: str) -> Optional[Dict]:
+        """Lookup person by phone number."""
+        if not phone:
+            return None
+        
+        clean_phone = "".join(c for c in phone if c.isdigit())
+        if clean_phone.startswith("00"):
+            clean_phone = clean_phone[2:]
+        
+        logger.info("Looking up person", phone_suffix=clean_phone[-4:])
+        
+        result = await self.execute_tool(
+            tool_def={"path": "/tenantmgt/Persons", "method": "GET"},
+            params={"Filter": f"Phone(=){clean_phone}"},
+            user_context={"tenant_id": self.default_tenant}
+        )
+        
+        if isinstance(result, dict) and result.get("error"):
+            # Try alternative filter
+            result = await self.execute_tool(
+                tool_def={"path": "/tenantmgt/Persons", "method": "GET"},
+                params={"Filter": f"Mobile(=){clean_phone}"},
+                user_context={"tenant_id": self.default_tenant}
+            )
+        
+        if isinstance(result, dict) and result.get("error"):
+            return None
+        
+        if isinstance(result, list) and len(result) > 0:
+            return result[0]
+        
+        if isinstance(result, dict):
+            if "Data" in result and isinstance(result["Data"], list) and len(result["Data"]) > 0:
+                return result["Data"][0]
+            if "Id" in result:
+                return result
+        
+        return None
+    
+    # =========================================================================
+    # GENERIC TOOL EXECUTION
+    # =========================================================================
+    
+    async def execute_tool(
+        self, 
+        tool_def: Dict[str, Any], 
+        params: Dict[str, Any],
+        user_context: Dict[str, Any] = None
+    ) -> Union[Dict, List, str]:
+        """
+        Execute API call using tool definition.
+        
+        tool_def should contain:
+        - path: API path
+        - method: HTTP method
+        - service: (optional) swagger service name
+        - parameters: (optional) parameter metadata
+        - auto_inject: (optional) parameters to inject automatically
+        """
+        path = tool_def.get("path", "")
+        method = tool_def.get("method", "GET").upper()
+        operation_id = tool_def.get("operationId", "unknown")
+        auto_inject = tool_def.get("auto_inject", [])
+        
+        user_context = user_context or {}
+        
+        logger.info(f"Executing: {operation_id}", method=method, path=path[:50])
+        
+        try:
+            token = await self._get_valid_token()
             
-            if missing_path_vars:
-                return {"error": "MissingParameter", "message": f"Fali path parametar: {missing_path_vars}"}
-
-            # 2. PRIPREMA HEADERA
+            # Substitute path parameters {id}
+            final_path, remaining = self._substitute_path_params(path, params)
+            
+            # =================================================================
+            # AUTO-INJECT PARAMETERS
+            # =================================================================
+            
+            person_id = user_context.get("person_id")
+            tenant_id = user_context.get("tenant_id") or self.default_tenant
+            
+            # MasterData: inject personId
+            if "masterdata" in path.lower() and method == "GET":
+                if "personId" not in remaining and person_id:
+                    remaining["personId"] = person_id
+                    logger.debug("Injected personId")
+            
+            # General auto-injection from tool definition
+            for param in auto_inject:
+                param_lower = param.lower()
+                if param_lower == "personid" and "personId" not in remaining and person_id:
+                    remaining["personId"] = person_id
+                elif param_lower == "assignedtoid" and "AssignedToId" not in remaining and person_id:
+                    remaining["AssignedToId"] = person_id
+            
+            # Separate query params and body
+            if method in ("GET", "DELETE"):
+                query_params = remaining
+                body = None
+            else:
+                query_params = {}
+                body = remaining.copy()
+                
+                # For POST requests, inject booking defaults
+                if "calendar" in path.lower() and method == "POST":
+                    if "AssignedToId" not in body and person_id:
+                        body["AssignedToId"] = person_id
+                        logger.debug("Injected AssignedToId")
+                    
+                    body.setdefault("AssigneeType", 1)
+                    body.setdefault("EntryType", 0)
+            
+            # Build URL
+            url = self._build_url(final_path, query_params)
+            
+            # Headers
             headers = {
+                "Authorization": f"Bearer {token}",
                 "Content-Type": "application/json",
                 "Accept": "application/json"
             }
-
-            # 🏢 LOGIKA TENANTA (poboljšana iz drugog koda)
-            tenant_id = None
             
-            # A) Prvo iz konteksta
-            if user_context and user_context.get("tenant_id"):
-                tenant_id = user_context["tenant_id"]
-            
-            # B) Ako je AI poslao u headerima
-            elif ai_headers.get("x-tenant"):
-                tenant_id = ai_headers["x-tenant"]
-            
-            # C) Fallback na PersonID (često isto u dev-u)
-            elif user_context and user_context.get("person_id"):
-                tenant_id = user_context["person_id"]
-                logger.info(f"🔑 Using person_id as tenant: {tenant_id}")
-            
-            # D) Zadnja opcija: default iz settings
-            if not tenant_id:
-                tenant_id = getattr(settings, "DEFAULT_TENANT_ID", None)
-
             if tenant_id:
-                headers["x-tenant"] = str(tenant_id)
-            else:
-                logger.warning("⚠️ No x-tenant header provided")
-
-
+                headers["x-tenant"] = tenant_id
             
-            # 3. Sastavljanje URL-a
-            final_url = raw_path.format(**path_params)
-            if not final_url.startswith("http"):
-                base = self.base_url.rstrip("/")
-                path = final_url.lstrip("/")
-                final_url = f"{base}/{path}"
-
-            # 4. DEBUG LOGGING (maskiramo auth token)
-            masked_headers = {k: '***' if 'authorization' in k.lower() else v for k, v in headers.items()}
-            logger.info(f"🚀 API REQUEST: {method} {final_url}")
-            logger.info(f"   headers: {masked_headers}")
-            if method in ["POST", "PUT", "PATCH"] and body_params:
-                logger.info(f"   body: {str(body_params)[:200]}")
-
-            # 5. IZVRŠAVANJE ZAHTJEVA
-            response = await self._do_request(
-                method=method,
-                url=final_url,
-                params=query_params if query_params else None,
-                json=body_params if body_params and method in ["POST", "PUT", "PATCH"] else None,
-                headers=headers
-            )
-
-            # 6. AI INSPECTOR (za velike odgovore)
-            if user_context and user_context.get("last_user_message") and isinstance(response, dict) and "error" not in response:
-                user_query = user_context["last_user_message"]
-                if user_query and len(json.dumps(response, default=str)) > 500:
-                    logger.info("🕵️ Running AI Inspector on response...")
-                    response = await self._ai_extract_info(user_query, response)
-
-            return response
-
+            logger.info(f"API Request", method=method, url=url[:100], tenant=tenant_id[:8] if tenant_id else "N/A")
+            
+            return await self._execute_request(method, url, headers, body)
+            
         except Exception as e:
-            logger.error(f"❌ Gateway execution failed: {str(e)}", exc_info=True)
-            return {"error": "GatewayError", "details": str(e)}
-
-    # --- AI INSPECTOR (iz drugog koda) ---
-    async def _ai_extract_info(self, user_query: str, json_data: Any) -> Any:
-        """
-        Šalje podatke LLM-u da pronađe odgovor, umjesto da vraća 5MB JSON-a botu.
-        """
-        try:
-            data_str = json.dumps(json_data, default=str)
-            
-            # Ako je JSON mali (< 500 znakova), ne troši AI resurse
-            if len(data_str) < 500: 
-                return json_data
-
-            # Truncate na sigurnu granicu
-            if len(data_str) > 25000: 
-                data_str = data_str[:25000] + "...(truncated)"
-
-            prompt = f"""
-            SYSTEM: You are a Data Extraction Assistant.
-            USER QUERY: "{user_query}"
-            RAW DATA: {data_str}
-
-            INSTRUCTIONS:
-            1. Search the RAW DATA for the exact answer to the user's question.
-            2. Ignore technical fields like GUIDs, TenantIds, RowVersions unless explicitly asked.
-            3. Focus on business data: Statuses, Dates, Names, Mileages, Plates.
-            4. Return the answer as a CLEAN, COMPACT JSON object.
-            5. If the answer is NOT in the data, return {{"status": "not_found"}}.
-            """
-
-            completion = await self.ai_client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0,
-                max_tokens=500
-            )
-            
-            result_text = completion.choices[0].message.content.strip()
-            
-            # Očisti markdown formatiranje
-            if result_text.startswith("```json"):
-                result_text = result_text.replace("```json", "").replace("```", "")
-            
+            logger.error(f"Tool failed: {operation_id}", error=str(e))
+            return {"error": True, "message": str(e)}
+    
+    def _build_url(self, path: str, query_params: Dict[str, Any] = None) -> str:
+        """Build URL with query parameters."""
+        if not path.startswith("/"):
+            path = "/" + path
+        
+        url = f"{self.base_url}{path}"
+        
+        if query_params:
+            # Filter out None values
+            clean = {k: v for k, v in query_params.items() if v is not None}
+            if clean:
+                parts = []
+                for k, v in clean.items():
+                    if k == "Filter":
+                        # Don't encode Filter value
+                        parts.append(f"{k}={v}")
+                    else:
+                        parts.append(f"{k}={quote(str(v), safe='')}")
+                url = f"{url}?{'&'.join(parts)}"
+        
+        return url
+    
+    def _substitute_path_params(self, path: str, params: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
+        """Replace {placeholder} in path."""
+        remaining = params.copy()
+        placeholders = re.findall(r"\{([a-zA-Z0-9_]+)\}", path)
+        
+        for ph in placeholders:
+            for key in list(remaining.keys()):
+                if key.lower() == ph.lower():
+                    path = path.replace(f"{{{ph}}}", str(remaining[key]))
+                    del remaining[key]
+                    break
+        
+        return path, remaining
+    
+    async def _execute_request(
+        self, 
+        method: str, 
+        url: str, 
+        headers: Dict, 
+        body: Optional[Dict] = None
+    ) -> Union[Dict, List, str]:
+        """Execute HTTP request with retry."""
+        max_retries = 2
+        
+        for attempt in range(max_retries + 1):
             try:
-                extracted = json.loads(result_text)
-                logger.info("✨ AI Extracted Data:", data=extracted)
-                return extracted
-            except:
-                return {"info": result_text}
-
-        except Exception as e:
-            logger.warning("AI Inspector failed, returning raw data", error=str(e))
-            return json_data
-
-    # --- HTTP EXECUTOR s JEDNOSTAVNOM AUTH LOGIKOM (iz prvog koda) ---
-    @retry(
-        stop=stop_after_attempt(3), 
-        wait=wait_exponential(multiplier=1, min=1, max=10), 
-        retry=retry_if_exception_type((httpx.RequestError, httpx.TimeoutException))
-    )
-    async def _do_request(self, method: str, url: str, **kwargs) -> Dict[str, Any]:
-        
-        # 1. PRIPREMA HEADERA
-        if "headers" not in kwargs: 
-            kwargs["headers"] = {}
-        
-        # Dodaj token
-        if "Authorization" in self.client.headers:
-            kwargs["headers"]["Authorization"] = self.client.headers["Authorization"]
-
-        # 2. FIX ZA UPLOAD (GREŠKA 415)
-        # Ako šaljemo 'files', requests/httpx biblioteka mora SAMA postaviti boundary.
-        # Ako ručno ostavimo 'Content-Type': 'application/json', upload će puknuti (415).
-        if "files" in kwargs and kwargs["files"]:
-            kwargs["headers"].pop("Content-Type", None)
-            logger.info("ℹ️ Removed Content-Type header for file upload (415 Fix).")
-
-        # 3. POKUŠAJ 1
-        response = await self.client.request(method, url, **kwargs)
-
-        # 4. AUTH REFRESH LOGIKA (401 & 403)
-        if response.status_code in (401, 403):
-            logger.warning(f"⚠️ {response.status_code} Auth Error - Attempting token refresh...")
-            
-            if await self._refresh_token():
-                # Ažuriraj token u headerima
-                kwargs["headers"]["Authorization"] = self.client.headers["Authorization"]
-                # POKUŠAJ 2
-                response = await self.client.request(method, url, **kwargs)
-            else:
-                logger.error("❌ Token refresh failed.")
-                return {"error": "AuthFailed", "details": "Could not refresh token"}
-
-        # 5. RUKOVANJE GREŠKAMA (SPRJEČAVANJE AI HALUCINACIJA)
-        # Ako je status i dalje loš (npr. 415, 400, 500), ne vraćaj samo JSON.
-        if response.status_code >= 400:
-            error_msg = f"HTTP {response.status_code} Error: {response.text[:500]}"
-            logger.error(f"🛑 {error_msg}")
-            
-            # Vraćamo strukturu koju AI razumije kao NEUSPJEH
-            return {
-                "status": "error",
-                "http_code": response.status_code,
-                "message": "Action failed on server side.",
-                "server_response": response.text[:1000] # Dajemo AI-u tekst greške da shvati zašto
-            }
-        # 6. USPJEH
-        try:
-            return response.json()
-        except json.JSONDecodeError:
-            # Ponekad uspjeh nema JSON body (npr. 204 No Content)
-            return {"status": "success", "message": "Request successful (no content)"}
-
-    # --- JEDNOSTAVNA TOKEN LOGIKA (iz prvog koda) ---
-    async def _refresh_token(self) -> bool:
-        """
-        JEDNOSTAVNA LOGIKA: 
-        1. Probaj dohvatit iz Redisa (ako je netko drugi već osvježio).
-        2. Ako ne valja, dohvati novi s Identity servera.
-        3. Spremi u Redis i u self.client.
-        """
-        if not settings.MOBILITY_AUTH_URL: 
-            return False
-
-        TOKEN_KEY = "mobility_access_token"
-
-        # 1. Provjeri Redis (Cache Hit)
-        try:
-            cached_token = await self.redis.get(TOKEN_KEY)
-            current_local_token = self.client.headers.get("Authorization", "").replace("Bearer ", "")
-            
-            # Ako je u Redisu noviji token nego što mi imamo lokalno, uzmi ga
-            if cached_token and cached_token != current_local_token:
-                self.client.headers["Authorization"] = f"Bearer {cached_token}"
-                logger.info("✅ Loaded fresh token from Redis.")
-                return True
-        except Exception as e:
-            logger.warning(f"Redis error (ignoring): {e}")
-
-        # 2. Dohvati novi token (API Call)
-        logger.info("🔄 Fetching new token from Identity Server...")
-        payload = {
-            "client_id": settings.MOBILITY_CLIENT_ID,
-            "client_secret": settings.MOBILITY_CLIENT_SECRET,
-            "grant_type": "client_credentials"
-        }
-        
-        # Dodaci ako postoje
-        if getattr(settings, "MOBILITY_AUDIENCE", None):
-            payload["audience"] = settings.MOBILITY_AUDIENCE
-        if getattr(settings, "MOBILITY_SCOPE", None):
-            payload["scope"] = settings.MOBILITY_SCOPE
-
-        try:
-            # Koristimo novi klijent da ne petljamo po glavnom
-            async with httpx.AsyncClient() as auth_client:
-                resp = await auth_client.post(settings.MOBILITY_AUTH_URL, data=payload, timeout=10.0)
-            
-            if resp.status_code == 200:
-                data = resp.json()
-                new_token = data.get("access_token")
-                expires_in = data.get("expires_in", 3600)
+                if method == "GET":
+                    response = await self.client.get(url, headers=headers)
+                elif method == "POST":
+                    logger.debug(f"POST body", body=body)
+                    response = await self.client.post(url, headers=headers, json=body)
+                elif method == "PUT":
+                    response = await self.client.put(url, headers=headers, json=body)
+                elif method == "DELETE":
+                    response = await self.client.delete(url, headers=headers)
+                elif method == "PATCH":
+                    response = await self.client.patch(url, headers=headers, json=body)
+                else:
+                    return {"error": True, "message": f"Unsupported method: {method}"}
                 
-                # Spremi
-                self.client.headers["Authorization"] = f"Bearer {new_token}"
-                await self.redis.set(TOKEN_KEY, new_token, ex=int(expires_in) - 60)
+                # 401: Refresh token
+                if response.status_code == 401 and attempt < max_retries:
+                    logger.warning("401 - refreshing token")
+                    await self._invalidate_token()
+                    token = await self._get_valid_token()
+                    headers["Authorization"] = f"Bearer {token}"
+                    continue
                 
-                logger.info("✅ Token refreshed and saved.")
-                return True
-            else:
-                logger.error(f"❌ Auth endpoint returned {resp.status_code}: {resp.text}")
-                return False
-
-        except Exception as e:
-            logger.error(f"❌ Critical Auth Error: {e}")
-            return False
-
-    # --- PAMETNA RASPODJELA PARAMETARA (iz drugog koda) ---
-    def _distribute_parameters(self, path: str, method: str, params: dict):
-        """
-        Razdvaja parametre na Path, Query, Body i Headere.
-        Bitno: Prepoznaje ako je AI pokušao poslati 'x-tenant' kao parametar.
-        """
-        req_vars = re.findall(r"\{([a-zA-Z0-9_\-]+)\}", path)
-        p_path, p_query, p_body = {}, {}, {}
-        special_headers = {}
-
-        for k, v in params.items():
-            key_lower = k.lower()
-            
-            # 1. HEADER DETEKCIJA (Ako AI pokuša poslati tenant ili auth)
-            if key_lower in ["x-tenant", "tenantid", "tenant", "authorization"]:
-                special_headers[key_lower] = str(v)
-                continue
-
-            # 2. PATH Varijable (npr. /Users/{id})
-            if k in req_vars:
-                p_path[k] = v
-            
-            # 3. BODY (samo za POST/PUT/PATCH)
-            elif method.upper() in ["POST", "PUT", "PATCH", "DELETE"]:
-                p_body[k] = v
-            
-            # 4. QUERY String (sve ostalo ide u ?key=value)
-            else:
-                p_query[k] = v
+                # Error responses
+                if response.status_code == 400:
+                    error_text = response.text[:300]
+                    logger.error(f"HTTP 400", body=error_text)
+                    return {
+                        "error": True, 
+                        "status": 400, 
+                        "message": f"Neispravni parametri: {error_text}"
+                    }
                 
-        return p_path, p_query, p_body, special_headers
-
+                if response.status_code == 403:
+                    logger.error(f"HTTP 403 Forbidden")
+                    return {
+                        "error": True, 
+                        "status": 403, 
+                        "message": "Nemate dozvolu za ovu operaciju."
+                    }
+                
+                if response.status_code == 404:
+                    return {
+                        "error": True, 
+                        "status": 404, 
+                        "message": "Resurs nije pronađen."
+                    }
+                
+                if response.status_code >= 400:
+                    logger.error(f"HTTP {response.status_code}", body=response.text[:200])
+                    return {
+                        "error": True, 
+                        "status": response.status_code, 
+                        "message": response.text[:200]
+                    }
+                
+                # Success - parse response
+                content_type = response.headers.get("content-type", "")
+                
+                try:
+                    return response.json()
+                except:
+                    return {"data": response.text}
+                    
+            except httpx.TimeoutException:
+                if attempt < max_retries:
+                    continue
+                return {"error": True, "message": "Timeout - pokušajte ponovno"}
+                
+            except Exception as e:
+                if attempt < max_retries:
+                    continue
+                return {"error": True, "message": str(e)}
+        
+        return {"error": True, "message": "Max retries exceeded"}
+    
     async def close(self):
-        await self.client.aclose()
-        await self.redis.close()
+        """Cleanup."""
+        if self.client:
+            await self.client.aclose()
+        if self._redis:
+            await self._redis.close()

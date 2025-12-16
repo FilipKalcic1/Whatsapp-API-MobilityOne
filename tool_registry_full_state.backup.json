@@ -1,6 +1,6 @@
 {
   "version": "9.0",
-  "timestamp": "2025-12-16T20:07:51.694409",
+  "timestamp": "2025-12-16T20:07:47.789793",
   "checksum": "a0fa068d30a759fffca02e0a3712a31e",
   "tools": {
     "post_AddCase": {
@@ -3819,17 +3819,26 @@
     },
     "get_Lookup_CostCenterId": {
       "operationId": "get_Lookup_CostCenterId",
-      "service": "vehiclemgt",
-      "path": "/vehiclemgt/Lookup/CostCenterId",
+      "service": "tenantmgt",
+      "path": "/tenantmgt/Lookup/CostCenterId",
       "method": "GET",
       "base_url": "https://dev-k1.mobilityone.io",
-      "full_url": "https://dev-k1.mobilityone.io/vehiclemgt/Lookup/CostCenterId",
+      "full_url": "https://dev-k1.mobilityone.io/tenantmgt/Lookup/CostCenterId",
       "description": "get_Lookup_CostCenterId",
-      "parameters": {},
+      "parameters": {
+        "term": {
+          "type": "string",
+          "format": "",
+          "required": false,
+          "in": "query",
+          "description": "",
+          "auto_inject": false
+        }
+      },
       "required_params": [],
       "auto_inject": [],
       "examples": [],
-      "text_for_embedding": "get_Lookup_CostCenterId [vehiclemgt] get /vehiclemgt/Lookup/CostCenterId. get_Lookup_CostCenterId",
+      "text_for_embedding": "get_Lookup_CostCenterId [tenantmgt] get /tenantmgt/Lookup/CostCenterId. get_Lookup_CostCenterId. Parameters: term(string)",
       "def": {
         "type": "function",
         "function": {
@@ -3837,7 +3846,12 @@
           "description": "get_Lookup_CostCenterId",
           "parameters": {
             "type": "object",
-            "properties": {},
+            "properties": {
+              "term": {
+                "type": "string",
+                "description": ""
+              }
+            },
             "required": []
           }
         }
@@ -3845,17 +3859,26 @@
     },
     "get_Lookup_CompanyId": {
       "operationId": "get_Lookup_CompanyId",
-      "service": "vehiclemgt",
-      "path": "/vehiclemgt/Lookup/CompanyId",
+      "service": "tenantmgt",
+      "path": "/tenantmgt/Lookup/CompanyId",
       "method": "GET",
       "base_url": "https://dev-k1.mobilityone.io",
-      "full_url": "https://dev-k1.mobilityone.io/vehiclemgt/Lookup/CompanyId",
+      "full_url": "https://dev-k1.mobilityone.io/tenantmgt/Lookup/CompanyId",
       "description": "get_Lookup_CompanyId",
-      "parameters": {},
+      "parameters": {
+        "term": {
+          "type": "string",
+          "format": "",
+          "required": false,
+          "in": "query",
+          "description": "",
+          "auto_inject": false
+        }
+      },
       "required_params": [],
       "auto_inject": [],
       "examples": [],
-      "text_for_embedding": "get_Lookup_CompanyId [vehiclemgt] get /vehiclemgt/Lookup/CompanyId. get_Lookup_CompanyId",
+      "text_for_embedding": "get_Lookup_CompanyId [tenantmgt] get /tenantmgt/Lookup/CompanyId. get_Lookup_CompanyId. Parameters: term(string)",
       "def": {
         "type": "function",
         "function": {
@@ -3863,7 +3886,12 @@
           "description": "get_Lookup_CompanyId",
           "parameters": {
             "type": "object",
-            "properties": {},
+            "properties": {
+              "term": {
+                "type": "string",
+                "description": ""
+              }
+            },
             "required": []
           }
         }
@@ -3871,17 +3899,26 @@
     },
     "get_Lookup_OrgUnitId": {
       "operationId": "get_Lookup_OrgUnitId",
-      "service": "vehiclemgt",
-      "path": "/vehiclemgt/Lookup/OrgUnitId",
+      "service": "tenantmgt",
+      "path": "/tenantmgt/Lookup/OrgUnitId",
       "method": "GET",
       "base_url": "https://dev-k1.mobilityone.io",
-      "full_url": "https://dev-k1.mobilityone.io/vehiclemgt/Lookup/OrgUnitId",
+      "full_url": "https://dev-k1.mobilityone.io/tenantmgt/Lookup/OrgUnitId",
       "description": "get_Lookup_OrgUnitId",
-      "parameters": {},
+      "parameters": {
+        "term": {
+          "type": "string",
+          "format": "",
+          "required": false,
+          "in": "query",
+          "description": "",
+          "auto_inject": false
+        }
+      },
       "required_params": [],
       "auto_inject": [],
       "examples": [],
-      "text_for_embedding": "get_Lookup_OrgUnitId [vehiclemgt] get /vehiclemgt/Lookup/OrgUnitId. get_Lookup_OrgUnitId",
+      "text_for_embedding": "get_Lookup_OrgUnitId [tenantmgt] get /tenantmgt/Lookup/OrgUnitId. get_Lookup_OrgUnitId. Parameters: term(string)",
       "def": {
         "type": "function",
         "function": {
@@ -3889,7 +3926,12 @@
           "description": "get_Lookup_OrgUnitId",
           "parameters": {
             "type": "object",
-            "properties": {},
+            "properties": {
+              "term": {
+                "type": "string",
+                "description": ""
+              }
+            },
             "required": []
           }
         }
@@ -3897,11 +3939,11 @@
     },
     "get_Lookup_PersonId": {
       "operationId": "get_Lookup_PersonId",
-      "service": "vehiclemgt",
-      "path": "/vehiclemgt/Lookup/PersonId",
+      "service": "tenantmgt",
+      "path": "/tenantmgt/Lookup/PersonId",
       "method": "GET",
       "base_url": "https://dev-k1.mobilityone.io",
-      "full_url": "https://dev-k1.mobilityone.io/vehiclemgt/Lookup/PersonId",
+      "full_url": "https://dev-k1.mobilityone.io/tenantmgt/Lookup/PersonId",
       "description": "get_Lookup_PersonId",
       "parameters": {
         "term": {
@@ -3916,7 +3958,7 @@
       "required_params": [],
       "auto_inject": [],
       "examples": [],
-      "text_for_embedding": "get_Lookup_PersonId [vehiclemgt] get /vehiclemgt/Lookup/PersonId. get_Lookup_PersonId. Parameters: term(string)",
+      "text_for_embedding": "get_Lookup_PersonId [tenantmgt] get /tenantmgt/Lookup/PersonId. get_Lookup_PersonId. Parameters: term(string)",
       "def": {
         "type": "function",
         "function": {
@@ -4095,17 +4137,26 @@
     },
     "get_Lookup_PartnerId": {
       "operationId": "get_Lookup_PartnerId",
-      "service": "vehiclemgt",
-      "path": "/vehiclemgt/Lookup/PartnerId",
+      "service": "tenantmgt",
+      "path": "/tenantmgt/Lookup/PartnerId",
       "method": "GET",
       "base_url": "https://dev-k1.mobilityone.io",
-      "full_url": "https://dev-k1.mobilityone.io/vehiclemgt/Lookup/PartnerId",
+      "full_url": "https://dev-k1.mobilityone.io/tenantmgt/Lookup/PartnerId",
       "description": "get_Lookup_PartnerId",
-      "parameters": {},
+      "parameters": {
+        "term": {
+          "type": "string",
+          "format": "",
+          "required": false,
+          "in": "query",
+          "description": "",
+          "auto_inject": false
+        }
+      },
       "required_params": [],
       "auto_inject": [],
       "examples": [],
-      "text_for_embedding": "get_Lookup_PartnerId [vehiclemgt] get /vehiclemgt/Lookup/PartnerId. get_Lookup_PartnerId",
+      "text_for_embedding": "get_Lookup_PartnerId [tenantmgt] get /tenantmgt/Lookup/PartnerId. get_Lookup_PartnerId. Parameters: term(string)",
       "def": {
         "type": "function",
         "function": {
@@ -4113,7 +4164,12 @@
           "description": "get_Lookup_PartnerId",
           "parameters": {
             "type": "object",
-            "properties": {},
+            "properties": {
+              "term": {
+                "type": "string",
+                "description": ""
+              }
+            },
             "required": []
           }
         }
@@ -4199,17 +4255,17 @@
     },
     "post_Metadata_Order": {
       "operationId": "post_Metadata_Order",
-      "service": "vehiclemgt",
-      "path": "/vehiclemgt/Metadata/Order",
+      "service": "tenantmgt",
+      "path": "/tenantmgt/Metadata/Order",
       "method": "POST",
       "base_url": "https://dev-k1.mobilityone.io",
-      "full_url": "https://dev-k1.mobilityone.io/vehiclemgt/Metadata/Order",
+      "full_url": "https://dev-k1.mobilityone.io/tenantmgt/Metadata/Order",
       "description": "post_Metadata_Order",
       "parameters": {},
       "required_params": [],
       "auto_inject": [],
       "examples": [],
-      "text_for_embedding": "post_Metadata_Order [vehiclemgt] post /vehiclemgt/Metadata/Order. post_Metadata_Order",
+      "text_for_embedding": "post_Metadata_Order [tenantmgt] post /tenantmgt/Metadata/Order. post_Metadata_Order",
       "def": {
         "type": "function",
         "function": {
@@ -4225,17 +4281,17 @@
     },
     "post_Metadata": {
       "operationId": "post_Metadata",
-      "service": "vehiclemgt",
-      "path": "/vehiclemgt/Metadata",
+      "service": "tenantmgt",
+      "path": "/tenantmgt/Metadata",
       "method": "POST",
       "base_url": "https://dev-k1.mobilityone.io",
-      "full_url": "https://dev-k1.mobilityone.io/vehiclemgt/Metadata",
+      "full_url": "https://dev-k1.mobilityone.io/tenantmgt/Metadata",
       "description": "Creates a new item.",
       "parameters": {},
       "required_params": [],
       "auto_inject": [],
       "examples": [],
-      "text_for_embedding": "post_Metadata [vehiclemgt] post /vehiclemgt/Metadata. Creates a new item.",
+      "text_for_embedding": "post_Metadata [tenantmgt] post /tenantmgt/Metadata. Creates a new item.",
       "def": {
         "type": "function",
         "function": {
@@ -4251,17 +4307,17 @@
     },
     "delete_Metadata": {
       "operationId": "delete_Metadata",
-      "service": "vehiclemgt",
-      "path": "/vehiclemgt/Metadata",
+      "service": "tenantmgt",
+      "path": "/tenantmgt/Metadata",
       "method": "DELETE",
       "base_url": "https://dev-k1.mobilityone.io",
-      "full_url": "https://dev-k1.mobilityone.io/vehiclemgt/Metadata",
+      "full_url": "https://dev-k1.mobilityone.io/tenantmgt/Metadata",
       "description": "Deletes multiple items",
       "parameters": {},
       "required_params": [],
       "auto_inject": [],
       "examples": [],
-      "text_for_embedding": "delete_Metadata [vehiclemgt] delete /vehiclemgt/Metadata. Deletes multiple items",
+      "text_for_embedding": "delete_Metadata [tenantmgt] delete /tenantmgt/Metadata. Deletes multiple items",
       "def": {
         "type": "function",
         "function": {
@@ -4277,11 +4333,11 @@
     },
     "get_Metadata": {
       "operationId": "get_Metadata",
-      "service": "vehiclemgt",
-      "path": "/vehiclemgt/Metadata",
+      "service": "tenantmgt",
+      "path": "/tenantmgt/Metadata",
       "method": "GET",
       "base_url": "https://dev-k1.mobilityone.io",
-      "full_url": "https://dev-k1.mobilityone.io/vehiclemgt/Metadata",
+      "full_url": "https://dev-k1.mobilityone.io/tenantmgt/Metadata",
       "description": "Get all items based on (lazy) load parameters (paging, sorting, and filtering)",
       "parameters": {
         "First": {
@@ -4336,7 +4392,7 @@
       "required_params": [],
       "auto_inject": [],
       "examples": [],
-      "text_for_embedding": "get_Metadata [vehiclemgt] get /vehiclemgt/Metadata. Get all items based on (lazy) load parameters (paging, sorting, and filtering). Parameters: First(integer), Rows(integer), Sort(string), SortOrder(integer), Filter(array), UseANDFor(array)",
+      "text_for_embedding": "get_Metadata [tenantmgt] get /tenantmgt/Metadata. Get all items based on (lazy) load parameters (paging, sorting, and filtering). Parameters: First(integer), Rows(integer), Sort(string), SortOrder(integer), Filter(array), UseANDFor(array)",
       "def": {
         "type": "function",
         "function": {
@@ -4377,11 +4433,11 @@
     },
     "put_Metadata_id": {
       "operationId": "put_Metadata_id",
-      "service": "vehiclemgt",
-      "path": "/vehiclemgt/Metadata/{id}",
+      "service": "tenantmgt",
+      "path": "/tenantmgt/Metadata/{id}",
       "method": "PUT",
       "base_url": "https://dev-k1.mobilityone.io",
-      "full_url": "https://dev-k1.mobilityone.io/vehiclemgt/Metadata/{id}",
+      "full_url": "https://dev-k1.mobilityone.io/tenantmgt/Metadata/{id}",
       "description": "Update the item",
       "parameters": {
         "id": {
@@ -4398,7 +4454,7 @@
       ],
       "auto_inject": [],
       "examples": [],
-      "text_for_embedding": "put_Metadata_id [vehiclemgt] put /vehiclemgt/Metadata/{id}. Update the item. Parameters: id(integer)",
+      "text_for_embedding": "put_Metadata_id [tenantmgt] put /tenantmgt/Metadata/{id}. Update the item. Parameters: id(integer)",
       "def": {
         "type": "function",
         "function": {
@@ -4421,11 +4477,11 @@
     },
     "patch_Metadata_id": {
       "operationId": "patch_Metadata_id",
-      "service": "vehiclemgt",
-      "path": "/vehiclemgt/Metadata/{id}",
+      "service": "tenantmgt",
+      "path": "/tenantmgt/Metadata/{id}",
       "method": "PATCH",
       "base_url": "https://dev-k1.mobilityone.io",
-      "full_url": "https://dev-k1.mobilityone.io/vehiclemgt/Metadata/{id}",
+      "full_url": "https://dev-k1.mobilityone.io/tenantmgt/Metadata/{id}",
       "description": "Partially update the item",
       "parameters": {
         "id": {
@@ -4442,7 +4498,7 @@
       ],
       "auto_inject": [],
       "examples": [],
-      "text_for_embedding": "patch_Metadata_id [vehiclemgt] patch /vehiclemgt/Metadata/{id}. Partially update the item. Parameters: id(integer)",
+      "text_for_embedding": "patch_Metadata_id [tenantmgt] patch /tenantmgt/Metadata/{id}. Partially update the item. Parameters: id(integer)",
       "def": {
         "type": "function",
         "function": {
@@ -4465,11 +4521,11 @@
     },
     "delete_Metadata_id": {
       "operationId": "delete_Metadata_id",
-      "service": "vehiclemgt",
-      "path": "/vehiclemgt/Metadata/{id}",
+      "service": "tenantmgt",
+      "path": "/tenantmgt/Metadata/{id}",
       "method": "DELETE",
       "base_url": "https://dev-k1.mobilityone.io",
-      "full_url": "https://dev-k1.mobilityone.io/vehiclemgt/Metadata/{id}",
+      "full_url": "https://dev-k1.mobilityone.io/tenantmgt/Metadata/{id}",
       "description": "Delete the item base on primary key value (id)",
       "parameters": {
         "id": {
@@ -4486,7 +4542,7 @@
       ],
       "auto_inject": [],
       "examples": [],
-      "text_for_embedding": "delete_Metadata_id [vehiclemgt] delete /vehiclemgt/Metadata/{id}. Delete the item base on primary key value (id). Parameters: id(integer)",
+      "text_for_embedding": "delete_Metadata_id [tenantmgt] delete /tenantmgt/Metadata/{id}. Delete the item base on primary key value (id). Parameters: id(integer)",
       "def": {
         "type": "function",
         "function": {
@@ -4509,11 +4565,11 @@
     },
     "get_Metadata_id": {
       "operationId": "get_Metadata_id",
-      "service": "vehiclemgt",
-      "path": "/vehiclemgt/Metadata/{id}",
+      "service": "tenantmgt",
+      "path": "/tenantmgt/Metadata/{id}",
       "method": "GET",
       "base_url": "https://dev-k1.mobilityone.io",
-      "full_url": "https://dev-k1.mobilityone.io/vehiclemgt/Metadata/{id}",
+      "full_url": "https://dev-k1.mobilityone.io/tenantmgt/Metadata/{id}",
       "description": "Returns single item based on primary key value",
       "parameters": {
         "id": {
@@ -4530,7 +4586,7 @@
       ],
       "auto_inject": [],
       "examples": [],
-      "text_for_embedding": "get_Metadata_id [vehiclemgt] get /vehiclemgt/Metadata/{id}. Returns single item based on primary key value. Parameters: id(integer)",
+      "text_for_embedding": "get_Metadata_id [tenantmgt] get /tenantmgt/Metadata/{id}. Returns single item based on primary key value. Parameters: id(integer)",
       "def": {
         "type": "function",
         "function": {
@@ -4553,17 +4609,17 @@
     },
     "delete_Metadata_DeleteByCriteria": {
       "operationId": "delete_Metadata_DeleteByCriteria",
-      "service": "vehiclemgt",
-      "path": "/vehiclemgt/Metadata/DeleteByCriteria",
+      "service": "tenantmgt",
+      "path": "/tenantmgt/Metadata/DeleteByCriteria",
       "method": "DELETE",
       "base_url": "https://dev-k1.mobilityone.io",
-      "full_url": "https://dev-k1.mobilityone.io/vehiclemgt/Metadata/DeleteByCriteria",
+      "full_url": "https://dev-k1.mobilityone.io/tenantmgt/Metadata/DeleteByCriteria",
       "description": "Deletes multiple items bsed of filter criteria. Filter criteria is same as for getting the data (filter, and useANDFor)",
       "parameters": {},
       "required_params": [],
       "auto_inject": [],
       "examples": [],
-      "text_for_embedding": "delete_Metadata_DeleteByCriteria [vehiclemgt] delete /vehiclemgt/Metadata/DeleteByCriteria. Deletes multiple items bsed of filter criteria. Filter criteria is same as for getting the data (filter, and useANDFor)",
+      "text_for_embedding": "delete_Metadata_DeleteByCriteria [tenantmgt] delete /tenantmgt/Metadata/DeleteByCriteria. Deletes multiple items bsed of filter criteria. Filter criteria is same as for getting the data (filter, and useANDFor)",
       "def": {
         "type": "function",
         "function": {
@@ -4579,11 +4635,11 @@
     },
     "post_Metadata_id_documents": {
       "operationId": "post_Metadata_id_documents",
-      "service": "vehiclemgt",
-      "path": "/vehiclemgt/Metadata/{id}/documents",
+      "service": "tenantmgt",
+      "path": "/tenantmgt/Metadata/{id}/documents",
       "method": "POST",
       "base_url": "https://dev-k1.mobilityone.io",
-      "full_url": "https://dev-k1.mobilityone.io/vehiclemgt/Metadata/{id}/documents",
+      "full_url": "https://dev-k1.mobilityone.io/tenantmgt/Metadata/{id}/documents",
       "description": "post_Metadata_id_documents",
       "parameters": {
         "id": {
@@ -4600,7 +4656,7 @@
       ],
       "auto_inject": [],
       "examples": [],
-      "text_for_embedding": "post_Metadata_id_documents [vehiclemgt] post /vehiclemgt/Metadata/{id}/documents. post_Metadata_id_documents. Parameters: id(integer)",
+      "text_for_embedding": "post_Metadata_id_documents [tenantmgt] post /tenantmgt/Metadata/{id}/documents. post_Metadata_id_documents. Parameters: id(integer)",
       "def": {
         "type": "function",
         "function": {
@@ -4623,11 +4679,11 @@
     },
     "get_Metadata_id_documents": {
       "operationId": "get_Metadata_id_documents",
-      "service": "vehiclemgt",
-      "path": "/vehiclemgt/Metadata/{id}/documents",
+      "service": "tenantmgt",
+      "path": "/tenantmgt/Metadata/{id}/documents",
       "method": "GET",
       "base_url": "https://dev-k1.mobilityone.io",
-      "full_url": "https://dev-k1.mobilityone.io/vehiclemgt/Metadata/{id}/documents",
+      "full_url": "https://dev-k1.mobilityone.io/tenantmgt/Metadata/{id}/documents",
       "description": "get_Metadata_id_documents",
       "parameters": {
         "id": {
@@ -4644,7 +4700,7 @@
       ],
       "auto_inject": [],
       "examples": [],
-      "text_for_embedding": "get_Metadata_id_documents [vehiclemgt] get /vehiclemgt/Metadata/{id}/documents. get_Metadata_id_documents. Parameters: id(integer)",
+      "text_for_embedding": "get_Metadata_id_documents [tenantmgt] get /tenantmgt/Metadata/{id}/documents. get_Metadata_id_documents. Parameters: id(integer)",
       "def": {
         "type": "function",
         "function": {
@@ -4667,11 +4723,11 @@
     },
     "get_Metadata_id_documents_documentId": {
       "operationId": "get_Metadata_id_documents_documentId",
-      "service": "vehiclemgt",
-      "path": "/vehiclemgt/Metadata/{id}/documents/{documentId}",
+      "service": "tenantmgt",
+      "path": "/tenantmgt/Metadata/{id}/documents/{documentId}",
       "method": "GET",
       "base_url": "https://dev-k1.mobilityone.io",
-      "full_url": "https://dev-k1.mobilityone.io/vehiclemgt/Metadata/{id}/documents/{documentId}",
+      "full_url": "https://dev-k1.mobilityone.io/tenantmgt/Metadata/{id}/documents/{documentId}",
       "description": "get_Metadata_id_documents_documentId",
       "parameters": {
         "id": {
@@ -4697,7 +4753,7 @@
       ],
       "auto_inject": [],
       "examples": [],
-      "text_for_embedding": "get_Metadata_id_documents_documentId [vehiclemgt] get /vehiclemgt/Metadata/{id}/documents/{documentId}. get_Metadata_id_documents_documentId. Parameters: id(integer), documentId(string)",
+      "text_for_embedding": "get_Metadata_id_documents_documentId [tenantmgt] get /tenantmgt/Metadata/{id}/documents/{documentId}. get_Metadata_id_documents_documentId. Parameters: id(integer), documentId(string)",
       "def": {
         "type": "function",
         "function": {
@@ -4725,11 +4781,11 @@
     },
     "put_Metadata_id_documents_documentId": {
       "operationId": "put_Metadata_id_documents_documentId",
-      "service": "vehiclemgt",
-      "path": "/vehiclemgt/Metadata/{id}/documents/{documentId}",
+      "service": "tenantmgt",
+      "path": "/tenantmgt/Metadata/{id}/documents/{documentId}",
       "method": "PUT",
       "base_url": "https://dev-k1.mobilityone.io",
-      "full_url": "https://dev-k1.mobilityone.io/vehiclemgt/Metadata/{id}/documents/{documentId}",
+      "full_url": "https://dev-k1.mobilityone.io/tenantmgt/Metadata/{id}/documents/{documentId}",
       "description": "Update document's info. In order to identify the document, entity id and document id are needed\ninfo can be a string or a json",
       "parameters": {
         "id": {
@@ -4755,7 +4811,7 @@
       ],
       "auto_inject": [],
       "examples": [],
-      "text_for_embedding": "put_Metadata_id_documents_documentId [vehiclemgt] put /vehiclemgt/Metadata/{id}/documents/{documentId}. Update document's info. In order to identify the document, entity id and document id are needed\ninfo can be a string or a json. Parameters: id(integer), documentId(string)",
+      "text_for_embedding": "put_Metadata_id_documents_documentId [tenantmgt] put /tenantmgt/Metadata/{id}/documents/{documentId}. Update document's info. In order to identify the document, entity id and document id are needed\ninfo can be a string or a json. Parameters: id(integer), documentId(string)",
       "def": {
         "type": "function",
         "function": {
@@ -4783,11 +4839,11 @@
     },
     "delete_Metadata_id_documents_documentId": {
       "operationId": "delete_Metadata_id_documents_documentId",
-      "service": "vehiclemgt",
-      "path": "/vehiclemgt/Metadata/{id}/documents/{documentId}",
+      "service": "tenantmgt",
+      "path": "/tenantmgt/Metadata/{id}/documents/{documentId}",
       "method": "DELETE",
       "base_url": "https://dev-k1.mobilityone.io",
-      "full_url": "https://dev-k1.mobilityone.io/vehiclemgt/Metadata/{id}/documents/{documentId}",
+      "full_url": "https://dev-k1.mobilityone.io/tenantmgt/Metadata/{id}/documents/{documentId}",
       "description": "delete_Metadata_id_documents_documentId",
       "parameters": {
         "id": {
@@ -4813,7 +4869,7 @@
       ],
       "auto_inject": [],
       "examples": [],
-      "text_for_embedding": "delete_Metadata_id_documents_documentId [vehiclemgt] delete /vehiclemgt/Metadata/{id}/documents/{documentId}. delete_Metadata_id_documents_documentId. Parameters: id(integer), documentId(string)",
+      "text_for_embedding": "delete_Metadata_id_documents_documentId [tenantmgt] delete /tenantmgt/Metadata/{id}/documents/{documentId}. delete_Metadata_id_documents_documentId. Parameters: id(integer), documentId(string)",
       "def": {
         "type": "function",
         "function": {
@@ -4841,11 +4897,11 @@
     },
     "get_Metadata_id_documents_documentId_thumb": {
       "operationId": "get_Metadata_id_documents_documentId_thumb",
-      "service": "vehiclemgt",
-      "path": "/vehiclemgt/Metadata/{id}/documents/{documentId}/thumb",
+      "service": "tenantmgt",
+      "path": "/tenantmgt/Metadata/{id}/documents/{documentId}/thumb",
       "method": "GET",
       "base_url": "https://dev-k1.mobilityone.io",
-      "full_url": "https://dev-k1.mobilityone.io/vehiclemgt/Metadata/{id}/documents/{documentId}/thumb",
+      "full_url": "https://dev-k1.mobilityone.io/tenantmgt/Metadata/{id}/documents/{documentId}/thumb",
       "description": "get_Metadata_id_documents_documentId_thumb",
       "parameters": {
         "id": {
@@ -4871,7 +4927,7 @@
       ],
       "auto_inject": [],
       "examples": [],
-      "text_for_embedding": "get_Metadata_id_documents_documentId_thumb [vehiclemgt] get /vehiclemgt/Metadata/{id}/documents/{documentId}/thumb. get_Metadata_id_documents_documentId_thumb. Parameters: id(integer), documentId(string)",
+      "text_for_embedding": "get_Metadata_id_documents_documentId_thumb [tenantmgt] get /tenantmgt/Metadata/{id}/documents/{documentId}/thumb. get_Metadata_id_documents_documentId_thumb. Parameters: id(integer), documentId(string)",
       "def": {
         "type": "function",
         "function": {
@@ -4899,11 +4955,11 @@
     },
     "put_Metadata_id_documents_documentId_SetAsDefault": {
       "operationId": "put_Metadata_id_documents_documentId_SetAsDefault",
-      "service": "vehiclemgt",
-      "path": "/vehiclemgt/Metadata/{id}/documents/{documentId}/SetAsDefault",
+      "service": "tenantmgt",
+      "path": "/tenantmgt/Metadata/{id}/documents/{documentId}/SetAsDefault",
       "method": "PUT",
       "base_url": "https://dev-k1.mobilityone.io",
-      "full_url": "https://dev-k1.mobilityone.io/vehiclemgt/Metadata/{id}/documents/{documentId}/SetAsDefault",
+      "full_url": "https://dev-k1.mobilityone.io/tenantmgt/Metadata/{id}/documents/{documentId}/SetAsDefault",
       "description": "Set the document as the default one for the entity. In order to identify the document, entity id and document id are needed\ninfo can be a string or a json",
       "parameters": {
         "id": {
@@ -4929,7 +4985,7 @@
       ],
       "auto_inject": [],
       "examples": [],
-      "text_for_embedding": "put_Metadata_id_documents_documentId_SetAsDefault [vehiclemgt] put /vehiclemgt/Metadata/{id}/documents/{documentId}/SetAsDefault. Set the document as the default one for the entity. In order to identify the document, entity id and document id are needed\ninfo can be a string or a json. Parameters: id(integer), documentId(string)",
+      "text_for_embedding": "put_Metadata_id_documents_documentId_SetAsDefault [tenantmgt] put /tenantmgt/Metadata/{id}/documents/{documentId}/SetAsDefault. Set the document as the default one for the entity. In order to identify the document, entity id and document id are needed\ninfo can be a string or a json. Parameters: id(integer), documentId(string)",
       "def": {
         "type": "function",
         "function": {
@@ -4957,11 +5013,11 @@
     },
     "get_Metadata_id_metadata": {
       "operationId": "get_Metadata_id_metadata",
-      "service": "vehiclemgt",
-      "path": "/vehiclemgt/Metadata/{id}/metadata",
+      "service": "tenantmgt",
+      "path": "/tenantmgt/Metadata/{id}/metadata",
       "method": "GET",
       "base_url": "https://dev-k1.mobilityone.io",
-      "full_url": "https://dev-k1.mobilityone.io/vehiclemgt/Metadata/{id}/metadata",
+      "full_url": "https://dev-k1.mobilityone.io/tenantmgt/Metadata/{id}/metadata",
       "description": "Returns metadata of the entity with the specified primary key value",
       "parameters": {
         "id": {
@@ -4978,7 +5034,7 @@
       ],
       "auto_inject": [],
       "examples": [],
-      "text_for_embedding": "get_Metadata_id_metadata [vehiclemgt] get /vehiclemgt/Metadata/{id}/metadata. Returns metadata of the entity with the specified primary key value. Parameters: id(integer)",
+      "text_for_embedding": "get_Metadata_id_metadata [tenantmgt] get /tenantmgt/Metadata/{id}/metadata. Returns metadata of the entity with the specified primary key value. Parameters: id(integer)",
       "def": {
         "type": "function",
         "function": {
@@ -5001,11 +5057,11 @@
     },
     "get_Metadata_Agg": {
       "operationId": "get_Metadata_Agg",
-      "service": "vehiclemgt",
-      "path": "/vehiclemgt/Metadata/Agg",
+      "service": "tenantmgt",
+      "path": "/tenantmgt/Metadata/Agg",
       "method": "GET",
       "base_url": "https://dev-k1.mobilityone.io",
-      "full_url": "https://dev-k1.mobilityone.io/vehiclemgt/Metadata/Agg",
+      "full_url": "https://dev-k1.mobilityone.io/tenantmgt/Metadata/Agg",
       "description": "Get the value specified by the aggregate function (min, max, avg, sum) of items satisfying filters\nIf there are no data in the result, then the results in empty (204-No Content)",
       "parameters": {
         "function": {
@@ -5044,7 +5100,7 @@
       "required_params": [],
       "auto_inject": [],
       "examples": [],
-      "text_for_embedding": "get_Metadata_Agg [vehiclemgt] get /vehiclemgt/Metadata/Agg. Get the value specified by the aggregate function (min, max, avg, sum) of items satisfying filters\nIf there are no data in the result, then the results in empty (204-No Content). Parameters: function(string), aggregateField(string), filter(array), useANDFor(array)",
+      "text_for_embedding": "get_Metadata_Agg [tenantmgt] get /tenantmgt/Metadata/Agg. Get the value specified by the aggregate function (min, max, avg, sum) of items satisfying filters\nIf there are no data in the result, then the results in empty (204-No Content). Parameters: function(string), aggregateField(string), filter(array), useANDFor(array)",
       "def": {
         "type": "function",
         "function": {
@@ -5077,11 +5133,11 @@
     },
     "get_Metadata_GroupBy": {
       "operationId": "get_Metadata_GroupBy",
-      "service": "vehiclemgt",
-      "path": "/vehiclemgt/Metadata/GroupBy",
+      "service": "tenantmgt",
+      "path": "/tenantmgt/Metadata/GroupBy",
       "method": "GET",
       "base_url": "https://dev-k1.mobilityone.io",
-      "full_url": "https://dev-k1.mobilityone.io/vehiclemgt/Metadata/GroupBy",
+      "full_url": "https://dev-k1.mobilityone.io/tenantmgt/Metadata/GroupBy",
       "description": "get_Metadata_GroupBy",
       "parameters": {
         "filter": {
@@ -5128,7 +5184,7 @@
       "required_params": [],
       "auto_inject": [],
       "examples": [],
-      "text_for_embedding": "get_Metadata_GroupBy [vehiclemgt] get /vehiclemgt/Metadata/GroupBy. get_Metadata_GroupBy. Parameters: filter(array), useANDFor(array), groupBy(string), function(string), aggregateField(string)",
+      "text_for_embedding": "get_Metadata_GroupBy [tenantmgt] get /tenantmgt/Metadata/GroupBy. get_Metadata_GroupBy. Parameters: filter(array), useANDFor(array), groupBy(string), function(string), aggregateField(string)",
       "def": {
         "type": "function",
         "function": {

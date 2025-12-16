@@ -1,25 +1,43 @@
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, Index
-from sqlalchemy.sql import func
-from database import Base
+"""
+Database Models - Production Ready
+"""
+
+from datetime import datetime
+from sqlalchemy import Column, String, Boolean, DateTime, Text
+from sqlalchemy.orm import declarative_base
+
+Base = declarative_base()
+
 
 class UserMapping(Base):
-    __tablename__ = "user_mappings"
-
-    id = Column(Integer, primary_key=True, index=True)
-        
-
-    phone_number = Column(String(50), unique=True, nullable=False)
-
-    api_identity = Column(String(100), nullable=False)
-
-    display_name = Column(String(100), nullable=True)
+    """
+    Maps WhatsApp phone numbers to MobilityOne PersonIds.
     
+    This allows fast lookups without hitting the API every time.
+    """
+    __tablename__ = "user_mappings"
+    
+    phone_number = Column(String(50), primary_key=True, index=True)
+    api_identity = Column(String(100), nullable=False)  # PersonId (GUID)
+    display_name = Column(String(200), nullable=True)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    def __repr__(self):
+        return f"<UserMapping {self.phone_number} -> {self.api_identity[:8]}...>"
 
-    __table_args__ = (
-        Index('idx_phone_active', 'phone_number', 'is_active'),
-    )
 
-
+class ConversationLog(Base):
+    """
+    Log of all conversations for analytics and debugging.
+    """
+    __tablename__ = "conversation_logs"
+    
+    id = Column(String(50), primary_key=True)
+    phone_number = Column(String(50), index=True)
+    direction = Column(String(10))  # 'inbound' or 'outbound'
+    content = Column(Text)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+    tool_called = Column(String(100), nullable=True)
+    api_response_time = Column(String(20), nullable=True)

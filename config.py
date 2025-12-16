@@ -1,85 +1,118 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
+"""
+MobilityOne Configuration - Production Ready (v5.0)
+
+FIXED:
+- Proper swagger URLs with correct versions
+- All 3 services: automation, tenantmgt, vehiclemgt
+"""
 from functools import lru_cache
-from typing import Literal, Optional, List, Dict 
+from typing import List, Optional, Dict
+from pydantic_settings import BaseSettings
+from pydantic import Field, field_validator
+
+
+# =============================================================================
+# SWAGGER SERVICE DEFINITIONS
+# =============================================================================
+
+SWAGGER_SERVICES: Dict[str, str] = {
+    "automation": "v1.0.0",
+    "tenantmgt": "v2.0.0-alpha",
+    "vehiclemgt": "v2.0.0-alpha"
+}
+
 
 class Settings(BaseSettings):
-    APP_ENV: Literal["development", "production", "testing"] = "development"
+    """Centralized configuration."""
     
-    # --- INFRASTRUCTURE ---
-    REDIS_URL: str
-    DATABASE_URL: str
-    SENTRY_DSN: Optional[str] = None
-
-    DB_POOL_SIZE: int = 5
-    DB_MAX_OVERFLOW: int = 10
-    DB_POOL_RECYCLE: int = 3600
+    # --- APPLICATION ---
+    APP_ENV: str = Field(default="development")
     
-    # --- AI CONFIGURATION ---
-    #OPENAI_API_KEY: str
-    #OPENAI_MODEL: str = "gpt-3.5-turbo"
-    AZURE_OPENAI_ENDPOINT: str
-    AZURE_OPENAI_API_KEY: str
-    AZURE_OPENAI_API_VERSION: str = "2024-08-01-preview"
-    AZURE_OPENAI_DEPLOYMENT_NAME: str = "gpt-4o-mini"
-    AZURE_OPENAI_EMBEDDING_DEPLOYMENT: str = "text-embedding-3-small"
+    # --- DATABASE ---
+    DATABASE_URL: str = Field(
+        default="postgresql+asyncpg://appuser:password@localhost:5432/mobility_tenants"
+    )
+    DB_PASSWORD: str = Field(default="")
+    DB_POOL_SIZE: int = Field(default=10)
+    DB_MAX_OVERFLOW: int = Field(default=20)
+    DB_POOL_RECYCLE: int = Field(default=3600)
     
-    # --- 3RD PARTY ---
-    INFOBIP_BASE_URL: str
-    INFOBIP_API_KEY: str
-    INFOBIP_SENDER_NUMBER: str
-    INFOBIP_SECRET_KEY: str
-
-    # --- MOBILITY ONE API ---
-    MOBILITY_API_URL: str 
-    MOBILITY_API_KEY: Optional[str] = None
+    # --- REDIS ---
+    REDIS_URL: str = Field(default="redis://localhost:6379/0")
     
-    # Auth
-    MOBILITY_AUTH_URL: Optional[str] = None
-    MOBILITY_CLIENT_ID: Optional[str] = None
-    MOBILITY_CLIENT_SECRET: Optional[str] = None
-    MOBILITY_SCOPE: Optional[str] = None 
-    MOBILITY_AUDIENCE: str = "none"
-
-    MOBILITY_TENANT_ID: Optional[str] = None
-    MOBILITY_USER_CHECK_ENDPOINT: str = "/PersonData/{personIdOrEmail}"
+    # --- INFOBIP ---
+    INFOBIP_API_KEY: str = Field(default="")
+    INFOBIP_BASE_URL: str = Field(default="api.infobip.com")
+    INFOBIP_SECRET_KEY: str = Field(default="")
+    INFOBIP_SENDER_NUMBER: str = Field(default="")
     
-    # Opcionalni override
-    SWAGGER_URL: Optional[str] = None
-
-    ACTIVE_SERVICES: Dict[str, str] = {
-        "automation": "v1.0.0",   
-        "tenantmgt": "v2.0.0-alpha",     
-        "vehiclemgt" : "v2.0.0-alpha"
-    }
-
+    # --- MOBILITYONE API ---
+    MOBILITY_API_URL: str = Field(default="https://dev-k1.mobilityone.io")
+    MOBILITY_AUTH_URL: str = Field(default="https://dev-k1.mobilityone.io/sso/connect/token")
+    MOBILITY_CLIENT_ID: str = Field(default="m1AI")
+    MOBILITY_CLIENT_SECRET: str = Field(default="")
+    MOBILITY_SCOPE: Optional[str] = Field(default=None)
+    MOBILITY_AUDIENCE: Optional[str] = Field(default=None)
+    MOBILITY_API_TOKEN: Optional[str] = Field(default=None)
+    
+    # Tenant ID
+    MOBILITY_TENANT_ID: Optional[str] = Field(default=None)
+    DEFAULT_TENANT_ID: Optional[str] = Field(default=None)
+    
+    # --- AZURE OPENAI ---
+    AZURE_OPENAI_ENDPOINT: str = Field(default="")
+    AZURE_OPENAI_API_KEY: str = Field(default="")
+    AZURE_OPENAI_API_VERSION: str = Field(default="2024-08-01-preview")
+    AZURE_OPENAI_DEPLOYMENT_NAME: str = Field(default="gpt-4o-mini")
+    AZURE_OPENAI_EMBEDDING_DEPLOYMENT: str = Field(default="text-embedding-ada-002")
+    AI_CONFIDENCE_THRESHOLD: float = Field(default=0.85)
+    
+    # --- SWAGGER (optional override) ---
+    SWAGGER_URL: Optional[str] = Field(default=None)
+    SWAGGER_SOURCES: Optional[str] = Field(default=None)
+    
+    # --- MONITORING ---
+    SENTRY_DSN: Optional[str] = Field(default=None)
+    GRAFANA_PASSWORD: str = Field(default="admin")
+    
+    @property
+    def tenant_id(self) -> str:
+        """Get tenant ID."""
+        return self.MOBILITY_TENANT_ID or self.DEFAULT_TENANT_ID or ""
+    
     @property
     def swagger_sources(self) -> List[str]:
         """
-        Pametno generira listu svih Swagger URL-ova poštujući verzije.
+        Build ALL swagger source URLs.
+        
+        Format: {base_url}/{service}/swagger/{version}/swagger.json
+        
+        Services and versions:
+        - automation: v1.0.0
+        - tenantmgt: v2.0.0-alpha  
+        - vehiclemgt: v2.0.0-alpha
         """
+        base = self.MOBILITY_API_URL.rstrip("/")
         sources = []
-
-        # 1. Ručni override (ako postoji)
-        if self.SWAGGER_URL:
-            sources.append(self.SWAGGER_URL)
-
-        # 2. Dinamičko generiranje linkova
-        if self.MOBILITY_API_URL and self.MOBILITY_API_URL.startswith("http"):
-            base_url = self.MOBILITY_API_URL.rstrip('/')
-            
-            # [POPRAVAK] Iteriramo kroz (servis, verzija)
-            for service, version in self.ACTIVE_SERVICES.items():
-                # Format: .../{service}/swagger/{version}/swagger.json
-                url = f"{base_url}/{service}/swagger/{version}/swagger.json"
-                sources.append(url)
-        else:
-            # Fallback na lokalne datoteke
-            for service in self.ACTIVE_SERVICES.keys():
-                sources.append(f"temporary/{service}.json")
-
-        return list(set(sources))
+        
+        # Build URLs for all services
+        for service, version in SWAGGER_SERVICES.items():
+            url = f"{base}/{service}/swagger/{version}/swagger.json"
+            sources.append(url)
+        
+        return sources
     
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    @field_validator("MOBILITY_API_URL", mode="before")
+    @classmethod
+    def strip_trailing_slash(cls, v: str) -> str:
+        return v.rstrip("/") if v else v
+    
+    class Config:
+        env_file = ".env"
+        env_file_encoding = "utf-8"
+        case_sensitive = True
+        extra = "ignore"
+
 
 @lru_cache()
 def get_settings() -> Settings:

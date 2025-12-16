@@ -1,188 +1,220 @@
-import orjson
-import structlog
-import uuid
+"""
+AI Service - Production Ready (v2.0)
+
+Handles communication with Azure OpenAI:
+1. Intent analysis with function calling
+2. Conversation history management
+3. Robust error handling
+
+Workflow:
+1. Build messages array (system + history + current)
+2. Include tool definitions if available
+3. Call OpenAI Chat Completions
+4. Parse response (tool call or text)
+"""
+
 import json
+import structlog
 from typing import List, Dict, Any, Optional
+
 from openai import AsyncAzureOpenAI
 from config import get_settings
 
 settings = get_settings()
 logger = structlog.get_logger("ai")
 
+# Initialize OpenAI client
 client = AsyncAzureOpenAI(
     azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
     api_key=settings.AZURE_OPENAI_API_KEY,
     api_version=settings.AZURE_OPENAI_API_VERSION
 )
 
-# --- SYSTEM PROMPT (Template) ---
-# Ovo se koristi samo ako engine.py ne pošalje svoj prompt
-DEFAULT_SYSTEM_PROMPT = """
-SYSTEM DATA SNAPSHOT:
-You are the MobilityOne Assistant for {display_name}.
-
-### 🔐 KEYRING (INTERNAL KNOWLEDGE):
-The following data is ALREADY KNOWN. Do NOT ask the user for it.
-{facts}
-
-### 🔧 SYSTEM VARIABLES (FOR TOOL CALLS):
-When a tool requires an ID, use these values immediately:
-1. User.MobilePhone: "{phone}"
-2. Vehicle.LicencePlate: "{plate}"
-3. Vehicle.RegExpiry: "{reg_expiry}"
-4. TOOL PARAMETER 'personId' or 'driverId' -> USE: "{person_id}"
-5. TOOL PARAMETER 'vehicleId' or 'assetId' -> USE: "{vehicle_id}"
-
----------------------------------------------------
-
-### GLAVNE DIREKTIVE (CORE BEHAVIOR):
-
-1. **SMART PARAMETER EXTRACTION (KRITIČNO):**
-   - Cilj: Popuniti parametre iz govora.
-   - Primjer: "Prijavi štetu na braniku" -> Subject="Prijava štete", Message="Šteta na braniku".
-
-2. **PROTOKOL IZVRŠAVANJA:**
-   - READ: Ako je podatak u KEYRING-u, odgovori odmah.
-   - WRITE: Za akcije traži potvrdu ("DA" ili "POTVRĐUJEM").
-
-3. **STIL:**
-   - Hrvatski jezik. Kratko. Profesionalno.
-   - Bez "Dobar dan" svako malo.
-
-4. **FORMATIRANJE:**
-   - Boldaj ključno (*ZG-1234*). Emoji po potrebi.
-
-5. **POTVRDE:**
-   - Ako korisnik kaže "DA", izvrši akciju predloženu u prošloj poruci.
-
-Sada analiziraj povijest i pomozi korisniku {display_name}.
-"""
 
 async def analyze_intent(
-    history: List[Dict], 
-    current_text: str, 
+    history: List[Dict],
+    current_text: str = None,
     tools: List[Dict] = None,
     system_instruction: str = None
 ) -> Dict[str, Any]:
     """
-    Glavna funkcija za komunikaciju s OpenAI.
-    Priprema povijest, šalje alate i vraća odluku.
-    """
+    Analyze user intent and decide on action.
     
-    # 1. Priprema poruka (FLATTENING)
-    # Ovo pretvara kompleksne tool-call strukture iz prošlosti u običan tekst
-    # kako bi izbjegli 400 Bad Request greške zbog "broken chain-a".
-    messages = _construct_safe_messages(history, current_text, system_instruction)
-
-    try:
-        # 2. Priprema alata za OpenAI format
-        openai_tools = []
-        if tools:
-            for t in tools:
-                # Osiguraj da je format ispravan
-                if t.get("type") == "function" and "function" in t:
-                    openai_tools.append(t)
-                else:
-                    # Fallback ako je došao samo dict funkcije
-                    openai_tools.append({"type": "function", "function": t})
-        
-        call_args = {
-            "model": settings.AZURE_OPENAI_DEPLOYMENT_NAME,
-            "messages": messages,
-            "temperature": 0.0, # Deterministički odgovori
+    Args:
+        history: Conversation history
+        current_text: Current user message (None if continuing from tool result)
+        tools: Available tool definitions in OpenAI format
+        system_instruction: System prompt with context
+    
+    Returns:
+        {
+            "tool": tool_name or None,
+            "parameters": {} if tool call,
+            "tool_call_id": str if tool call,
+            "raw_tool_calls": list if tool call,
+            "response_text": str if text response
         }
-
-        if openai_tools:
-            call_args["tools"] = openai_tools
-            call_args["tool_choice"] = "auto" 
-            logger.info(f"🧠 Sending {len(openai_tools)} tools to OpenAI")
-
-        # 3. HTTP Poziv prema OpenAI
+    """
+    # Build messages
+    messages = _build_messages(history, current_text, system_instruction)
+    
+    # Prepare API call
+    call_args = {
+        "model": settings.AZURE_OPENAI_DEPLOYMENT_NAME,
+        "messages": messages,
+        "temperature": 0.3,  # Lower = more deterministic
+        "max_tokens": 1000
+    }
+    
+    # Add tools if available
+    if tools:
+        call_args["tools"] = tools
+        call_args["tool_choice"] = "auto"
+        logger.debug(f"Sending {len(tools)} tools to AI")
+    
+    try:
         response = await client.chat.completions.create(**call_args)
         
-        # Validacija odgovora
+        # Validate response
         if not response.choices:
-            logger.error("❌ OpenAI returned empty choices list")
+            logger.error("Empty response from OpenAI")
             return _text_response("Greška: Prazan odgovor od AI servisa.")
-
-        msg = response.choices[0].message
         
-        # --- DEBUG LOGGING ---
-        # Koristimo 'getattr' da ne pukne ako je content None
-        content_safe = getattr(msg, 'content', '') or ''
-        tool_calls_count = len(msg.tool_calls) if msg.tool_calls else 0
-        logger.info(f"🤖 RAW OPENAI RESPONSE: content='{content_safe[:50]}...' tool_calls={tool_calls_count}")
-        # ---------------------
-
-        # 4. Obrada odluke (Tool vs Text)
-        if msg.tool_calls:
-            # AI želi zvati alat
-            tool_call = msg.tool_calls[0]
+        message = response.choices[0].message
+        
+        # Check for tool call
+        if message.tool_calls and len(message.tool_calls) > 0:
+            tool_call = message.tool_calls[0]
+            
+            # Parse arguments
             try:
-                args = json.loads(tool_call.function.arguments)
+                arguments = json.loads(tool_call.function.arguments)
             except json.JSONDecodeError:
-                logger.warning("⚠️ AI generated invalid JSON arguments", raw=tool_call.function.arguments)
-                args = {} # Fallback
-
+                logger.warning("Invalid JSON in tool arguments", 
+                             raw=tool_call.function.arguments)
+                arguments = {}
+            
+            logger.info("AI decided to call tool", 
+                       tool=tool_call.function.name,
+                       params=list(arguments.keys()))
+            
             return {
                 "tool": tool_call.function.name,
-                "parameters": args,
+                "parameters": arguments,
                 "tool_call_id": tool_call.id,
-                "raw_tool_calls": msg.tool_calls, # Ovo vraćamo da engine može spremiti u povijest
+                "raw_tool_calls": _serialize_tool_calls(message.tool_calls),
                 "response_text": None
             }
-
-        # AI samo odgovara tekstom
-        return _text_response(msg.content)
-
+        
+        # Text response
+        text = message.content or "Nisam razumio. Možeš li pojasniti?"
+        logger.info("AI text response", length=len(text))
+        
+        return _text_response(text)
+        
     except Exception as e:
-        logger.error("🔥 AI Critical Failure", error=str(e))
-        return _text_response("Isprike, sustav je trenutno nedostupan (AI Error).")
+        logger.error("OpenAI API error", error=str(e))
+        return _text_response("Isprike, došlo je do greške. Pokušaj ponovno.")
 
-# --- HELPER METHODS ---
 
-def _construct_safe_messages(history: list, text: str, instruction: str | None) -> list:
+def _build_messages(
+    history: List[Dict],
+    current_text: str,
+    system_instruction: str
+) -> List[Dict]:
     """
-    Gradi sigurnu povijest poruka.
-    Pretvara prošle 'tool_calls' u tekstualne opise kako bi se izbjegle greške u API pozivima.
-    """
-    base_prompt = instruction if instruction else DEFAULT_SYSTEM_PROMPT
-    msgs = [{"role": "system", "content": base_prompt}]
+    Build messages array for OpenAI.
     
+    Handles complex history including tool calls by flattening them
+    to avoid "broken chain" errors.
+    """
+    messages = []
+    
+    # System prompt
+    if system_instruction:
+        messages.append({
+            "role": "system",
+            "content": system_instruction
+        })
+    
+    # Process history
     for msg in history:
         role = msg.get("role")
         content = msg.get("content")
         
-        # 1. User poruke prolaze netaknute
         if role == "user":
-            msgs.append({"role": "user", "content": content or ""})
+            messages.append({
+                "role": "user",
+                "content": content or ""
+            })
         
-        # 2. Assistant poruke
         elif role == "assistant":
-            # Ako je poruka imala tool_calls, pretvori ih u tekst
-            if "tool_calls" in msg and msg["tool_calls"]:
-                tool_name = msg["tool_calls"][0]["function"]["name"]
-                # Simuliramo da je AI rekao "Zovem alat X..."
-                msgs.append({"role": "assistant", "content": f"🛠️ [System Action: Calling tool '{tool_name}']"})
+            # Check if this was a tool call
+            if msg.get("tool_calls"):
+                # Flatten tool call to text for safety
+                tool_name = msg["tool_calls"][0].get("function", {}).get("name", "unknown")
+                messages.append({
+                    "role": "assistant",
+                    "content": f"[Pozvao sam alat: {tool_name}]"
+                })
             else:
-                msgs.append({"role": "assistant", "content": content or ""})
+                messages.append({
+                    "role": "assistant",
+                    "content": content or ""
+                })
         
-        # 3. Tool poruke (Rezultati)
         elif role == "tool":
-            # Pretvori rezultat alata u System poruku s kontekstom
-            # Ovo je trik: OpenAI bolje razumije rezultate ako su dio konteksta, a ne "broken chain" tool poruka
-            msgs.append({"role": "system", "content": f"🛠️ [Tool Result]: {content}"})
-            
-    # Dodaj trenutni upit korisnika
-    if text:
-        msgs.append({"role": "user", "content": text})
-        
-    return msgs
+            # Convert tool result to system message for context
+            tool_name = msg.get("name", "tool")
+            messages.append({
+                "role": "system",
+                "content": f"[Rezultat od {tool_name}]: {content}"
+            })
+    
+    # Current message
+    if current_text:
+        messages.append({
+            "role": "user",
+            "content": current_text
+        })
+    
+    return messages
 
-def _text_response(text: str) -> dict:
+
+def _serialize_tool_calls(tool_calls) -> List[Dict]:
+    """
+    Serialize tool calls for storage in history.
+    Handles both Pydantic models and dicts.
+    """
+    result = []
+    
+    for tc in tool_calls:
+        if hasattr(tc, "model_dump"):
+            result.append(tc.model_dump())
+        elif hasattr(tc, "dict"):
+            result.append(tc.dict())
+        elif isinstance(tc, dict):
+            result.append(tc)
+        else:
+            # Manual extraction
+            result.append({
+                "id": getattr(tc, "id", ""),
+                "type": "function",
+                "function": {
+                    "name": getattr(tc.function, "name", ""),
+                    "arguments": getattr(tc.function, "arguments", "{}")
+                }
+            })
+    
+    return result
+
+
+def _text_response(text: str) -> Dict[str, Any]:
+    """Create a text-only response."""
     return {
-        "tool": None, 
-        "parameters": {}, 
-        "response_text": text or "Nisam razumio.",
-        "tool_call_id": None
+        "tool": None,
+        "parameters": {},
+        "tool_call_id": None,
+        "raw_tool_calls": None,
+        "response_text": text
     }
